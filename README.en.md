@@ -4,7 +4,7 @@
 
 # BloxAwys
 
-**Multiple Roblox accounts, multiple windows, one-click launch.**
+Runs several Roblox windows at once, each signed in to its own account.
 
 [Русский](README.md) · **English**
 
@@ -15,8 +15,6 @@
 [![GPLv3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
 
 </div>
-
----
 
 ## Screenshots
 
@@ -30,107 +28,103 @@
 
 ## Features
 
-- 🪟 **Several Roblox windows at once.** Each window runs its own account, and new windows don't close the old ones.
-- 👥 **All accounts in one list.** Sign in once, then launch Roblox with the ▶ button, no password needed.
-- 🚀 **Batch launch.** Tick the accounts you need and launch them all together.
-- 🎮 **Straight into a game.** Paste a game link or Place ID and every window opens in that game. Without a link, the Roblox home screen opens.
-- 🔐 **Sign in on the official site.** You enter your login and password on roblox.com in a built-in window. The client never sees or stores them.
-- 🛡️ **Encrypted data.** Sessions are stored only on your computer, encrypted.
-- 🔔 **Expired session warnings.** If Roblox resets a sign-in, the account shows "Sign in again".
-- 🧩 **Works alongside Bloxstrap and Fishstrap.** Finds the Roblox they installed and launches it directly.
+- Keep several Roblox windows open on different accounts. A new window doesn't close the previous ones.
+- Accounts are saved in a list. You sign in once, then start Roblox with the ▶ button, no password needed.
+- Tick several accounts and launch them in one go.
+- Paste a game link or Place ID and the windows open straight in that game. Without a link you get the Roblox home screen.
+- You type your login and password on roblox.com in a built-in window; the client doesn't see or store them.
+- Sessions are kept only on your computer, encrypted.
+- If Roblox resets a sign-in, the account gets a "Sign in again" button.
+- Works with Bloxstrap and Fishstrap: it finds the Roblox they installed and starts it directly.
 
-> [!NOTE]
-> The app interface is currently in Russian only.
+The app interface is in Russian for now.
 
 ## Installation
 
 1. Download `setup.exe` from the [latest release](https://github.com/Axawys/BloxAwys/releases/latest).
-2. Run the installer.
-   If Windows shows "Windows protected your PC", click **"More info" → "Run anyway"**. This appears because the app has no paid code signature.
-3. Open BloxAwys, click **"Войти и запустить Roblox"** (Sign in and launch Roblox) and sign in.
+2. Run the installer. If you see "Windows protected your PC", click "More info", then "Run anyway". Windows shows this because the app doesn't have a paid code signature.
+3. Open BloxAwys, click "Войти и запустить Roblox" (Sign in and launch Roblox) and sign in.
 
-Repeat the sign-in for your other accounts. After that, pick accounts in the list and launch them.
+Add your other accounts the same way. After that, pick accounts in the list and launch them.
 
-> [!IMPORTANT]
-> Keep BloxAwys open while Roblox windows are open. Without it, the next Roblox window closes the previous ones.
+BloxAwys has to stay open while Roblox windows are open. If you close it, the next Roblox window will close the previous ones.
 
 ## Security
 
-- The client talks only to Roblox servers. No servers of its own, no analytics, no ads.
-- Account sessions are encrypted with Windows DPAPI and tied to your Windows user: they can't be decrypted on another computer or by another user.
-- The source code is open, right here. Every release page has a VirusTotal report and the installer checksum.
+The client only talks to Roblox servers and has no servers of its own. Sessions are encrypted with Windows DPAPI and tied to your Windows account, so they can't be decrypted on another computer or by another user. The code is open and lives in this repository. Each release page has a VirusTotal report and the installer checksum.
 
-> [!WARNING]
-> An account session gives full access to the account. Never share BloxAwys files from `%APPDATA%\com.axawys`.
+A session gives full access to the account, so don't share the files in `%APPDATA%\com.axawys` with anyone.
 
 ## FAQ
 
 <details>
-<summary><b>Roblox windows still close each other</b></summary>
+<summary>Roblox windows still close each other</summary>
 
-Most likely Roblox was open before BloxAwys started; the client shows a warning about this. Close all Roblox windows, restart BloxAwys and launch accounts from it.
+Most likely Roblox was already open when BloxAwys started; the client shows a warning in that case. Close all Roblox windows, restart BloxAwys and launch your accounts from it.
 </details>
 
 <details>
-<summary><b>An account says the session has expired</b></summary>
+<summary>An account says the session has expired</summary>
 
 This happens if you click "Log out" inside Roblox, change the password, or end sessions in the account settings. Click "Sign in again" and sign in once more.
 </details>
 
 <details>
-<summary><b>"Roblox is not installed"</b></summary>
+<summary>"Roblox is not installed"</summary>
 
-Install Roblox from [roblox.com](https://www.roblox.com/download) and click "Check". Regular installs, Bloxstrap and Fishstrap are supported.
+Install Roblox from [roblox.com](https://www.roblox.com/download) and click "Check". A regular install, Bloxstrap and Fishstrap all work.
 </details>
-
----
 
 ## Technical details
 
 <details>
-<summary><b>How it works</b></summary>
+<summary>How it works</summary>
 
-- **Sign-in.** The sign-in window is an embedded WebView2 showing `roblox.com/login`, with a temporary profile for every sign-in. After sign-in the client takes the `.ROBLOSECURITY` cookie and deletes the profile. It does not log out, since that would invalidate the cookie.
-- **Storage.** Accounts are stored with `flutter_secure_storage` (DPAPI) in `%APPDATA%\com.axawys\bloxawys\flutter_secure_storage.dat`.
-- **Launch.** The cookie is exchanged for a one-time ticket (`auth.roblox.com/v1/authentication-ticket`), which is passed straight to `RobloxPlayerBeta.exe`. The `roblox-player:` protocol is not used, so Bloxstrap can't intercept it. If Roblox rotates the cookie in the response, the client saves the new one.
-- **Multiple windows.** On startup the client creates `ROBLOX_singletonMutex` and `ROBLOX_singletonEvent` and holds them while it's open (`lib/services/multi_instance.dart`).
-- **Batch launch.** Accounts launch one by one with a 2-second pause so the windows don't interfere with each other.
+Sign-in happens in an embedded WebView2 showing `roblox.com/login`. Each sign-in gets a temporary profile. Once you're signed in, the client takes the `.ROBLOSECURITY` cookie and deletes the profile. It doesn't log out, because that would invalidate the cookie.
+
+Accounts are stored with `flutter_secure_storage` (DPAPI) in `%APPDATA%\com.axawys\bloxawys\flutter_secure_storage.dat`.
+
+To launch, the client exchanges the cookie for a one-time ticket (`auth.roblox.com/v1/authentication-ticket`) and starts `RobloxPlayerBeta.exe` with it directly. It doesn't use the `roblox-player:` protocol, so Bloxstrap can't intercept the launch. If Roblox sends back a refreshed cookie, the client saves it.
+
+To keep windows from closing each other, the client creates `ROBLOX_singletonMutex` and `ROBLOX_singletonEvent` on startup and holds them while it's open (`lib/services/multi_instance.dart`).
+
+When several accounts are launched, there's a 2-second pause between them.
 
 </details>
 
 <details>
-<summary><b>Building on Windows</b></summary>
+<summary>Building on Windows</summary>
 
 1. Install [Flutter](https://docs.flutter.dev/get-started/install/windows/desktop).
-2. Install Visual Studio 2022 with the **"Desktop development with C++"** workload.
+2. Install Visual Studio 2022 with the "Desktop development with C++" workload.
 3. Install the NuGet CLI, which the WebView plugin needs: `winget install Microsoft.NuGet`, then restart the terminal.
-4. Turn on Windows **Developer Mode** (Settings → System → For developers). Without it Flutter can't create symlinks for plugins.
+4. Turn on Windows Developer Mode (Settings → System → For developers). Without it Flutter can't create symlinks for plugins.
 5. In the project folder:
    ```
    flutter pub get
    flutter run -d windows
    ```
-   Release build: `flutter build windows`, output in `build\windows\x64\runner\Release\`.
+   For a release build run `flutter build windows`; the files end up in `build\windows\x64\runner\Release\`.
 
-To run on another computer, `msvcp140.dll`, `vcruntime140.dll` and `vcruntime140_1.dll` must sit next to `bloxawys.exe` (or the Visual C++ Redistributable must be installed). WebView2 Runtime usually ships with Windows 10/11.
+To run the build on another computer, put `msvcp140.dll`, `vcruntime140.dll` and `vcruntime140_1.dll` next to `bloxawys.exe`, or install the Visual C++ Redistributable there. WebView2 Runtime usually comes with Windows 10 and 11.
 
 </details>
 
 <details>
-<summary><b>Previewing the UI on Linux</b></summary>
+<summary>Previewing the UI on Linux</summary>
 
 ```
 ./run_linux.sh
 ```
 
-The script builds a demo version (`lib/main_demo.dart`) and opens a 520×760 window like on Windows; floating on Hyprland. The demo has three in-memory test accounts, and "launching" only shows a spinner. Sign-in and launching Roblox don't work on Linux: there's no WebView2 and no Roblox. The theme is built for Windows and uses Segoe UI; if it isn't installed, the system font is used.
+The script builds a demo version (`lib/main_demo.dart`) and opens a 520×760 window, same as on Windows. On Hyprland the window opens floating. The demo has three test accounts kept in memory, and "launching" only shows a spinner. Sign-in and launching Roblox don't work on Linux, since there's no WebView2 or Roblox there. The theme is built as for Windows and uses Segoe UI; if that font isn't installed, the system font is used.
 
 `./run_linux.sh --real` runs the regular version instead of the demo.
 
 </details>
 
 <details>
-<summary><b>Project structure</b></summary>
+<summary>Project structure</summary>
 
 ```
 lib/
@@ -152,10 +146,6 @@ lib/
 
 ## License
 
-[GNU GPL v3](LICENSE). You're free to use, modify and share the code, but modified versions must also be released as open source under GPLv3.
+[GNU GPL v3](LICENSE). You can use, modify and share the code, but modified versions have to be published as open source under GPLv3 too.
 
----
-
-<div align="center">
 <sub>BloxAwys is not affiliated with Roblox Corporation. Roblox is a trademark of Roblox Corporation.</sub>
-</div>
