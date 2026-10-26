@@ -8,7 +8,7 @@ Runs several Roblox windows at once, each signed in to its own account.
 
 [Русский](README.md) · **English**
 
-[![Download](https://img.shields.io/github/v/release/Axawys/BloxAwys?label=Download&style=for-the-badge&color=3B82F6)](https://github.com/Axawys/BloxAwys/releases/latest)
+[![Download](https://img.shields.io/github/v/release/Axawys/BloxAwys?label=Download&style=for-the-badge&color=3B82F6)](https://github.com/Axawys/BloxAwys/releases/latest/download/bloxawys-setup.exe)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Flutter](https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white)
@@ -39,7 +39,7 @@ The app interface is in Russian for now.
 
 ## Installation
 
-1. Download `setup.exe` from the [latest release](https://github.com/Axawys/BloxAwys/releases/latest).
+1. Download [`bloxawys-setup.exe`](https://github.com/Axawys/BloxAwys/releases/latest/download/bloxawys-setup.exe) (also available on the [latest release](https://github.com/Axawys/BloxAwys/releases/latest) page).
 2. Run the installer. If you see "Windows protected your PC", click "More info", then "Run anyway". Windows shows this because the app doesn't have a paid code signature.
 3. Open BloxAwys, click "Войти и запустить Roblox" (Sign in and launch Roblox) and sign in.
 

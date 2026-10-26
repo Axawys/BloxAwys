@@ -8,7 +8,7 @@
 
 **Русский** · [English](README.en.md)
 
-[![Скачать](https://img.shields.io/github/v/release/Axawys/BloxAwys?label=%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C&style=for-the-badge&color=3B82F6)](https://github.com/Axawys/BloxAwys/releases/latest)
+[![Скачать](https://img.shields.io/github/v/release/Axawys/BloxAwys?label=%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C&style=for-the-badge&color=3B82F6)](https://github.com/Axawys/BloxAwys/releases/latest/download/bloxawys-setup.exe)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Flutter](https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white)
@@ -37,7 +37,7 @@
 
 ## Установка
 
-1. Скачайте `setup.exe` со страницы [последнего релиза](https://github.com/Axawys/BloxAwys/releases/latest).
+1. Скачайте [`bloxawys-setup.exe`](https://github.com/Axawys/BloxAwys/releases/latest/download/bloxawys-setup.exe) (он же есть на странице [последнего релиза](https://github.com/Axawys/BloxAwys/releases/latest)).
 2. Запустите установщик. Если появится окно «Windows защитила ваш компьютер», нажмите «Подробнее», затем «Выполнить в любом случае». Windows показывает его, потому что у программы нет платной цифровой подписи.
 3. Откройте BloxAwys, нажмите «Войти и запустить Roblox» и войдите в аккаунт.
 
