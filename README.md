@@ -12,6 +12,7 @@
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Flutter](https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white)
+[![GPLv3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
 
 </div>
 
@@ -145,6 +146,10 @@ lib/
 ```
 
 </details>
+
+## Лицензия
+
+[GNU GPL v3](LICENSE). Код можно свободно использовать, изменять и распространять, но изменённые версии тоже должны распространяться с открытым кодом под GPLv3.
 
 ---
 
