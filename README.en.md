@@ -19,11 +19,9 @@ Runs several Roblox windows at once, each signed in to its own account.
 ## Screenshots
 
 <div align="center">
-<img src="docs/screenshots/main.png" alt="Main window" width="300">
-&nbsp;&nbsp;
-<img src="docs/screenshots/login.png" alt="Signing in" width="300">
+<img src="docs/screenshots/multi.png" alt="Two Roblox windows on different accounts with BloxAwys" width="800">
 <br><br>
-<img src="docs/screenshots/multi.png" alt="Several Roblox windows at once" width="720">
+<img src="docs/screenshots/main.png" alt="BloxAwys main window" width="320">
 </div>
 
 ## Features

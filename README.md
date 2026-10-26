@@ -19,11 +19,9 @@
 ## Скриншоты
 
 <div align="center">
-<img src="docs/screenshots/main.png" alt="Главное окно" width="300">
-&nbsp;&nbsp;
-<img src="docs/screenshots/login.png" alt="Вход в аккаунт" width="300">
+<img src="docs/screenshots/multi.png" alt="Два окна Roblox под разными аккаунтами и BloxAwys" width="800">
 <br><br>
-<img src="docs/screenshots/multi.png" alt="Несколько окон Roblox одновременно" width="720">
+<img src="docs/screenshots/main.png" alt="Главное окно BloxAwys" width="320">
 </div>
 
 ## Возможности
