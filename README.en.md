@@ -115,25 +115,11 @@ To run the build on another computer, put `msvcp140.dll`, `vcruntime140.dll` and
 </details>
 
 <details>
-<summary>Previewing the UI on Linux</summary>
-
-```
-./run_linux.sh
-```
-
-The script builds a demo version (`lib/main_demo.dart`) and opens a 520×760 window, same as on Windows. On Hyprland the window opens floating. The demo has three test accounts kept in memory, and "launching" only shows a spinner. Sign-in and launching Roblox don't work on Linux, since there's no WebView2 or Roblox there. The theme is built as for Windows and uses Segoe UI; if that font isn't installed, the system font is used.
-
-`./run_linux.sh --real` runs the regular version instead of the demo.
-
-</details>
-
-<details>
 <summary>Project structure</summary>
 
 ```
 lib/
 ├── main.dart                  entry point
-├── main_demo.dart             demo mode for UI checks
 ├── app_controller.dart        app state: accounts, launching
 ├── models/
 │   ├── account.dart           saved account

@@ -10,18 +10,13 @@ void main() {
 }
 
 class BloxAwysApp extends StatelessWidget {
-  const BloxAwysApp({super.key, required this.controller, this.platform});
+  const BloxAwysApp({super.key, required this.controller});
 
   final AppController controller;
-
-  /// Платформа для темы. Нужна демо-режиму, чтобы на Linux интерфейс
-  /// выглядел как на Windows; по умолчанию — текущая платформа.
-  final TargetPlatform? platform;
 
   @override
   Widget build(BuildContext context) {
     ThemeData theme(Brightness brightness) => ThemeData(
-      platform: platform,
       colorScheme: ColorScheme.fromSeed(
         seedColor: const Color(0xFF3B82F6),
         brightness: brightness,
