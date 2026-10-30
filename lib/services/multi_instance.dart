@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
+import 'win32.dart';
+
 enum MultiInstanceStatus {
   /// Объекты созданы, можно запускать несколько окон.
   enabled,
@@ -24,50 +26,20 @@ enum MultiInstanceStatus {
 /// Если клиент закрыть, новые окна снова будут закрывать старые.
 class MultiInstance {
   static const _names = ['ROBLOX_singletonMutex', 'ROBLOX_singletonEvent'];
-  static const _synchronize = 0x00100000;
 
-  static final _handles = <Pointer<Void>>[];
-  static MultiInstanceStatus? _status;
+  final _handles = <Pointer<Void>>[];
+  MultiInstanceStatus? _status;
 
-  static MultiInstanceStatus enable() {
+  MultiInstanceStatus enable() {
     if (_status != null) return _status!;
     if (!Platform.isWindows) return _status = MultiInstanceStatus.unsupported;
 
-    final kernel32 = DynamicLibrary.open('kernel32.dll');
-    final openMutex = kernel32
-        .lookupFunction<
-          Pointer<Void> Function(Uint32, Int32, Pointer<Utf16>),
-          Pointer<Void> Function(int, int, Pointer<Utf16>)
-        >('OpenMutexW');
-    final createMutex = kernel32
-        .lookupFunction<
-          Pointer<Void> Function(Pointer<Void>, Int32, Pointer<Utf16>),
-          Pointer<Void> Function(Pointer<Void>, int, Pointer<Utf16>)
-        >('CreateMutexW');
-    final openEvent = kernel32
-        .lookupFunction<
-          Pointer<Void> Function(Uint32, Int32, Pointer<Utf16>),
-          Pointer<Void> Function(int, int, Pointer<Utf16>)
-        >('OpenEventW');
-    final closeHandle = kernel32
-        .lookupFunction<
-          Int32 Function(Pointer<Void>),
-          int Function(Pointer<Void>)
-        >('CloseHandle');
-
-    var robloxRunning = false;
+    // Если объекты уже существуют, их создал запущенный Roblox
+    // (или другой лаунчер вроде Bloxstrap).
+    final robloxRunning = _robloxObjectsExist();
     for (final name in _names) {
       final nativeName = name.toNativeUtf16();
       try {
-        // Если объект уже существует, его создал запущенный Roblox
-        // (или другой лаунчер вроде Bloxstrap).
-        for (final open in [openMutex, openEvent]) {
-          final existing = open(_synchronize, 0, nativeName);
-          if (existing != nullptr) {
-            robloxRunning = true;
-            closeHandle(existing);
-          }
-        }
         final handle = createMutex(nullptr, 1, nativeName);
         if (handle != nullptr) _handles.add(handle);
       } finally {
@@ -78,5 +50,51 @@ class MultiInstance {
     return _status = robloxRunning
         ? MultiInstanceStatus.robloxAlreadyRunning
         : MultiInstanceStatus.enabled;
+  }
+
+  /// Закрывает запущенные копии Roblox и заново создаёт объекты.
+  ///
+  /// Свои дескрипторы закрываются заранее: пока они открыты, объекты
+  /// Roblox не исчезнут и после завершения его процессов.
+  Future<MultiInstanceStatus> closeRobloxAndEnable() async {
+    if (!Platform.isWindows) return enable();
+    for (final handle in _handles) {
+      closeHandle(handle);
+    }
+    _handles.clear();
+    _status = null;
+
+    for (final pid in robloxPlayerPids()) {
+      final process = openProcess(processTerminate, 0, pid);
+      if (process != nullptr) {
+        terminateProcess(process, 0);
+        closeHandle(process);
+      }
+    }
+    // Процесс завершается не мгновенно, а объекты исчезают только
+    // вместе с последним дескриптором.
+    for (var i = 0; i < 20 && _robloxObjectsExist(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    return enable();
+  }
+
+  bool _robloxObjectsExist() {
+    var exists = false;
+    for (final name in _names) {
+      final nativeName = name.toNativeUtf16();
+      try {
+        for (final open in [openMutex, openEvent]) {
+          final existing = open(synchronize, 0, nativeName);
+          if (existing != nullptr) {
+            exists = true;
+            closeHandle(existing);
+          }
+        }
+      } finally {
+        calloc.free(nativeName);
+      }
+    }
+    return exists;
   }
 }

@@ -52,18 +52,19 @@ class RobloxLauncher {
     return best?.path;
   }
 
-  /// Запускает Roblox. Без [placeId] открывается главный экран приложения,
-  /// с ним — сразу эта игра.
-  Future<void> launch({required String ticket, int? placeId}) async {
+  /// Запускает Roblox и возвращает ID его процесса. Без [placeId]
+  /// открывается главный экран приложения, с ним — сразу эта игра.
+  Future<int> launch({required String ticket, int? placeId}) async {
     if (exePath == null || !File(exePath!).existsSync()) refresh();
     final exe = exePath ?? (throw RobloxNotFoundException());
 
-    await Process.start(
+    final process = await Process.start(
       exe,
       [buildLaunchUri(ticket: ticket, placeId: placeId)],
       workingDirectory: p.dirname(exe),
       mode: ProcessStartMode.detached,
     );
+    return process.pid;
   }
 
   /// Та же строка, которую сайт Roblox передаёт через протокол `roblox-player:`.

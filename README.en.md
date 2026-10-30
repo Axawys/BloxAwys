@@ -32,6 +32,8 @@ Runs several Roblox windows at once, each signed in to its own account.
 - Paste a game link or Place ID and the windows open straight in that game. Without a link you get the Roblox home screen.
 - You type your login and password on roblox.com in a built-in window; the client doesn't see or store them.
 - Sessions are kept only on your computer, encrypted.
+- Macros: record keyboard and mouse in a Roblox window, save them and loop them. Each window can run its own macro. Turn them on in the settings. Keep in mind that many games forbid macros in their rules.
+- Anti-AFK keeps Roblox from disconnecting you after 20 minutes of inactivity: every few minutes it turns the camera, takes a step or jumps in every window. Turn it on in the settings.
 - If Roblox resets a sign-in, the account gets a "Sign in again" button.
 - Works with Bloxstrap and Fishstrap: it finds the Roblox they installed and starts it directly.
 
@@ -58,7 +60,7 @@ A session gives full access to the account, so don't share the files in `%APPDAT
 <details>
 <summary>Roblox windows still close each other</summary>
 
-Most likely Roblox was already open when BloxAwys started; the client shows a warning in that case. Close all Roblox windows, restart BloxAwys and launch your accounts from it.
+Most likely Roblox was already open when BloxAwys started, for example from startup. The client then shows a red warning: click "Закрыть другие клиенты" (Close other clients) in it and launch your accounts from BloxAwys. If that doesn't help, another program such as Bloxstrap is holding Roblox: close it and restart BloxAwys.
 </details>
 
 <details>
@@ -87,6 +89,10 @@ To launch, the client exchanges the cookie for a one-time ticket (`auth.roblox.c
 To keep windows from closing each other, the client creates `ROBLOX_singletonMutex` and `ROBLOX_singletonEvent` on startup and holds them while it's open (`lib/services/multi_instance.dart`).
 
 When several accounts are launched, there's a 2-second pause between them.
+
+Anti-AFK (`lib/services/anti_afk.dart`, `lib/services/roblox_windows.dart`) finds the windows of `RobloxPlayerBeta.exe` processes, activates each in turn, presses keys via `SendInput` with scan codes, then gives focus back. If the user touched the mouse or keyboard in the last 30 seconds, the press is postponed. Settings live in `%APPDATA%\com.axawys\bloxawys\settings.json`.
+
+Macros are recorded with Raw Input (`lib/services/raw_input.dart`): a hidden message-only window receives input with the `RIDEV_INPUTSINK` flag, no global keyboard hooks are used. Only input from real devices is recorded, and only while the chosen Roblox window is active: keys as scan codes, mouse movement as relative deltas, clicks with a point in fractions of the window size. Playback (`lib/services/macro_player.dart`) runs the actions of all macros in time order and switches focus before an action for another window; held keys are released and pressed again around the switch. F8 ends recording and stops macros. Macros are stored in `macros.json` next to the settings.
 
 </details>
 
@@ -129,15 +135,28 @@ lib/
 ├── main.dart                  entry point
 ├── main_demo.dart             demo mode for UI checks
 ├── app_controller.dart        app state: accounts, launching
-├── models/account.dart        saved account
+├── models/
+│   ├── account.dart           saved account
+│   ├── macro.dart             a macro and its actions
+│   └── settings.dart          app settings
 ├── services/
 │   ├── account_store.dart     encrypted storage
+│   ├── settings_store.dart    settings (settings.json)
+│   ├── anti_afk.dart          anti-AFK schedule
+│   ├── roblox_windows.dart    Roblox windows: focus and key presses
+│   ├── win32.dart             WinAPI bindings
+│   ├── raw_input.dart         Raw Input and the F8 key
+│   ├── macro_recorder.dart    recording a macro
+│   ├── macro_player.dart      playing macros in windows
+│   ├── macro_store.dart       saved macros (macros.json)
 │   ├── roblox_api.dart        Roblox API: user, avatars, ticket
 │   ├── roblox_launcher.dart   finding and launching RobloxPlayerBeta.exe
 │   └── multi_instance.dart    multiple Roblox windows
 └── ui/
     ├── home_page.dart         main window
-    └── login_page.dart        sign-in window (WebView2)
+    ├── login_page.dart        sign-in window (WebView2)
+    ├── macros_page.dart       macros
+    └── settings_page.dart     settings
 ```
 
 </details>
