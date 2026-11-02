@@ -9,6 +9,8 @@ import 'package:ffi/ffi.dart';
 
 final _kernel32 = DynamicLibrary.open('kernel32.dll');
 final _user32 = DynamicLibrary.open('user32.dll');
+final _gdi32 = DynamicLibrary.open('gdi32.dll');
+final _dwmapi = DynamicLibrary.open('dwmapi.dll');
 
 const synchronize = 0x00100000;
 const processTerminate = 0x0001;
@@ -214,6 +216,121 @@ final getClientRect = _user32
       Int32 Function(IntPtr, Pointer<Rect>),
       int Function(int, Pointer<Rect>)
     >('GetClientRect');
+final messageBeep = _user32
+    .lookupFunction<Int32 Function(Uint32), int Function(int)>('MessageBeep');
+final setWindowPos = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, IntPtr, Int32, Int32, Int32, Int32, Uint32),
+      int Function(int, int, int, int, int, int, int)
+    >('SetWindowPos');
+final setLayeredWindowAttributes = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, Uint32, Uint8, Uint32),
+      int Function(int, int, int, int)
+    >('SetLayeredWindowAttributes');
+final setWindowRgn = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, IntPtr, Int32),
+      int Function(int, int, int)
+    >('SetWindowRgn');
+final invalidateRect = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, Pointer<Rect>, Int32),
+      int Function(int, Pointer<Rect>, int)
+    >('InvalidateRect');
+final getDpiForWindow = _user32
+    .lookupFunction<Uint32 Function(IntPtr), int Function(int)>(
+      'GetDpiForWindow',
+    );
+final beginPaint = _user32
+    .lookupFunction<
+      IntPtr Function(IntPtr, Pointer<Uint8>),
+      int Function(int, Pointer<Uint8>)
+    >('BeginPaint');
+final endPaint = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, Pointer<Uint8>),
+      int Function(int, Pointer<Uint8>)
+    >('EndPaint');
+final fillRect = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, Pointer<Rect>, IntPtr),
+      int Function(int, Pointer<Rect>, int)
+    >('FillRect');
+final drawText = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, Pointer<Utf16>, Int32, Pointer<Rect>, Uint32),
+      int Function(int, Pointer<Utf16>, int, Pointer<Rect>, int)
+    >('DrawTextW');
+
+final dwmSetWindowAttribute = _dwmapi
+    .lookupFunction<
+      Int32 Function(IntPtr, Uint32, Pointer<Int32>, Uint32),
+      int Function(int, int, Pointer<Int32>, int)
+    >('DwmSetWindowAttribute');
+
+/// Размер PAINTSTRUCT на x64: BeginPaint заполняет его, а клиенту нужен
+/// только возвращаемый HDC.
+const paintStructSize = 72;
+
+final createSolidBrush = _gdi32
+    .lookupFunction<IntPtr Function(Uint32), int Function(int)>(
+      'CreateSolidBrush',
+    );
+final deleteObject = _gdi32
+    .lookupFunction<Int32 Function(IntPtr), int Function(int)>('DeleteObject');
+final selectObject = _gdi32
+    .lookupFunction<IntPtr Function(IntPtr, IntPtr), int Function(int, int)>(
+      'SelectObject',
+    );
+final setTextColor = _gdi32
+    .lookupFunction<Uint32 Function(IntPtr, Uint32), int Function(int, int)>(
+      'SetTextColor',
+    );
+final setBkMode = _gdi32
+    .lookupFunction<Int32 Function(IntPtr, Int32), int Function(int, int)>(
+      'SetBkMode',
+    );
+final createRoundRectRgn = _gdi32
+    .lookupFunction<
+      IntPtr Function(Int32, Int32, Int32, Int32, Int32, Int32),
+      int Function(int, int, int, int, int, int)
+    >('CreateRoundRectRgn');
+final createFont = _gdi32
+    .lookupFunction<
+      IntPtr Function(
+        Int32,
+        Int32,
+        Int32,
+        Int32,
+        Int32,
+        Uint32,
+        Uint32,
+        Uint32,
+        Uint32,
+        Uint32,
+        Uint32,
+        Uint32,
+        Uint32,
+        Pointer<Utf16>,
+      ),
+      int Function(
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        Pointer<Utf16>,
+      )
+    >('CreateFontW');
 
 /// ID всех запущенных процессов RobloxPlayerBeta.exe.
 List<int> robloxPlayerPids() {

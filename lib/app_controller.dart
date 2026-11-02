@@ -12,6 +12,7 @@ import 'services/macro_recorder.dart';
 import 'services/macro_store.dart';
 import 'services/multi_instance.dart';
 import 'services/raw_input.dart';
+import 'services/recording_indicator.dart';
 import 'services/roblox_api.dart';
 import 'services/roblox_launcher.dart';
 import 'services/roblox_windows.dart';
@@ -36,12 +37,15 @@ class AppController extends ChangeNotifier {
        _settingsStore = settingsStore ?? SettingsStore(),
        _macroStore = macroStore ?? MacroStore() {
     final input = RawInputListener();
-    macroRecorder = recorder ?? MacroRecorder(_windows, input);
-    macroPlayer = (player ?? MacroPlayer(_windows, input))
+    // Запись и макросы не идут одновременно, поэтому плашка одна на двоих.
+    final indicator = RecordingIndicator();
+    macroRecorder = (recorder ?? MacroRecorder(_windows, input, indicator))
+      ..addListener(notifyListeners);
+    macroPlayer = (player ?? MacroPlayer(_windows, input, indicator))
       ..addListener(notifyListeners);
     antiAfk = AntiAfk(
       _windows,
-      isBusy: () => macroRecorder.recording || macroPlayer.running,
+      isBusy: () => macroRecorder.active || macroPlayer.active,
     )..addListener(notifyListeners);
   }
 
@@ -161,28 +165,31 @@ class AppController extends ChangeNotifier {
     return account;
   }
 
-  /// Записывает макрос в окне аккаунта до нажатия F8 и возвращает его
-  /// несохранённым; null — запись пустая или отменена.
-  Future<Macro?> recordMacro(Account account) async {
-    final pid = _running[account.userId];
-    if (pid == null) {
-      throw MacroException('Окно Roblox этого аккаунта не открыто');
+  /// Ждёт F8 в окне Roblox одного из запущенных аккаунтов и записывает
+  /// макрос в нём до следующего F8. Возвращает макрос несохранённым и
+  /// аккаунт, в чьём окне он записан; null — запись пустая или отменена.
+  Future<({Macro macro, Account? account})?> recordMacro() async {
+    if (_running.isEmpty) {
+      throw MacroException('Сначала запустите аккаунт на главном экране');
     }
-    final recording = macroRecorder.record(
-      pid: pid,
+    final recorded = await macroRecorder.record(
+      pids: _running.values.toSet(),
       mouseMovement: settings.macros.recordMouseMovement,
     );
-    notifyListeners();
-    try {
-      return await recording;
-    } finally {
-      final own = _windows.ownWindow();
-      if (own != null) _windows.focus(own);
-      notifyListeners();
-    }
+    if (recorded == null) return null;
+    // После F8 клиент последним получил ввод, поэтому Windows разрешает
+    // ему забрать фокус и показать окно сохранения.
+    final own = _windows.ownWindow();
+    if (own != null) _windows.focus(own);
+    final account = accounts
+        .where((a) => _running[a.userId] == recorded.pid)
+        .firstOrNull;
+    return (macro: recorded.macro, account: account);
   }
 
   void stopRecording() => macroRecorder.stop();
+
+  void cancelRecording() => macroRecorder.cancel();
 
   Future<void> addMacro(Macro macro, String name) async {
     macros = [...macros, macro.copyWith(name: name)];
@@ -213,20 +220,27 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Выбранный для окна аккаунта макрос, если он ещё существует.
+  Macro? macroFor(Account account) {
+    final id = macroChoiceFor(account).macroId;
+    return macros.where((m) => m.id == id).firstOrNull;
+  }
+
+  /// Запущенные аккаунты, для которых выбран макрос.
+  List<Account> get accountsWithMacro =>
+      runningAccounts.where((a) => macroFor(a) != null).toList();
+
   /// Запускает выбранные макросы в окнах аккаунтов. Возвращает аккаунты,
   /// чьи окна не нашлись.
   List<Account> startMacros() {
     final assignments = <MacroAssignment>[];
-    for (final account in runningAccounts) {
-      final choice = macroChoiceFor(account);
-      final macro = macros.where((m) => m.id == choice.macroId).firstOrNull;
-      if (macro == null) continue;
+    for (final account in accountsWithMacro) {
       assignments.add(
         MacroAssignment(
           userId: account.userId,
           pid: _running[account.userId]!,
-          macro: macro,
-          loop: choice.loop,
+          macro: macroFor(account)!,
+          mode: macroChoiceFor(account).mode,
         ),
       );
     }
@@ -245,7 +259,12 @@ class AppController extends ChangeNotifier {
     await _store.save(accounts);
   }
 
+  /// Запускает Roblox под аккаунтом. Если окно этого аккаунта уже открыто
+  /// или запускается, бросает [AlreadyRunningException].
   Future<void> launch(Account account, {int? placeId}) async {
+    if (isRunning(account) || launching.contains(account.userId)) {
+      throw AlreadyRunningException();
+    }
     launching.add(account.userId);
     notifyListeners();
     try {
@@ -317,10 +336,8 @@ class AppController extends ChangeNotifier {
 
 /// Выбор макроса для окна аккаунта.
 class MacroChoice {
-  const MacroChoice({this.macroId, this.loop = true});
+  const MacroChoice({this.macroId, this.mode = MacroPlayMode.loop});
 
   final String? macroId;
-
-  /// Повторять по кругу, пока не остановят.
-  final bool loop;
+  final MacroPlayMode mode;
 }

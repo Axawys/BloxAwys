@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../models/account.dart';
+import '../models/macro.dart';
 import '../services/multi_instance.dart';
 import '../services/roblox_launcher.dart';
 import 'login_page.dart';
 import 'macros_page.dart';
 import 'settings_page.dart';
+import 'theme.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.controller});
@@ -22,13 +24,30 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _selected = <int>{};
   final _placeController = TextEditingController();
+  bool _macrosWereRunning = false;
 
   AppController get _c => widget.controller;
 
   @override
+  void initState() {
+    super.initState();
+    _c.macroPlayer.addListener(_onPlayerChanged);
+  }
+
+  @override
   void dispose() {
+    _c.macroPlayer.removeListener(_onPlayerChanged);
     _placeController.dispose();
     super.dispose();
+  }
+
+  /// Сообщает, почему макросы остановились сами.
+  void _onPlayerChanged() {
+    final player = _c.macroPlayer;
+    if (_macrosWereRunning && !player.running && player.stopReason != null) {
+      _snack(player.stopReason!);
+    }
+    _macrosWereRunning = player.running;
   }
 
   int? _placeIdOrWarn() {
@@ -125,69 +144,100 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _toggleAntiAfk() {
+    final s = _c.settings;
+    _c.updateSettings(
+      s.copyWith(antiAfk: s.antiAfk.copyWith(enabled: !s.antiAfk.enabled)),
+    );
+  }
+
+  Future<void> _recordMacro() => recordAndSaveMacro(context, _c);
+
+  void _openMacros() => MacrosPage.open(context, _c);
+
+  void _startMacros() {
+    final missing = _c.startMacros();
+    if (missing.isNotEmpty) {
+      _snack(
+        'Не нашлось окно Roblox: '
+        '${missing.map((a) => a.displayName).join(', ')}',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _c,
-      builder: (context, _) => Scaffold(
-        appBar: AppBar(
-          title: const Text('BloxAwys'),
-          actions: [
-            if (_c.settings.macros.enabled)
+      builder: (context, _) {
+        // Запущенный аккаунт второй раз не запускается, поэтому из выбора
+        // для запуска он выпадает.
+        _selected.removeWhere(
+          (id) => _c.accounts.any((a) => a.userId == id && _c.isRunning(a)),
+        );
+        final antiAfkOn = _c.antiAfk.nextRunAt != null;
+        final macrosOn = _c.settings.macros.enabled;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('BloxAwys'),
+            actions: [
+              if (_c.antiAfk.supported)
+                IconButton(
+                  tooltip: antiAfkOn
+                      ? 'Анти-AFK включён — выключить'
+                      : 'Анти-AFK выключен — включить',
+                  onPressed: _toggleAntiAfk,
+                  icon: Icon(
+                    antiAfkOn ? Icons.shield : Icons.shield_outlined,
+                    color: antiAfkOn ? AppColors.of(context).success : null,
+                  ),
+                ),
               IconButton(
-                tooltip: 'Макросы',
-                onPressed: () => MacrosPage.open(context, _c),
-                icon: const Icon(Icons.keyboard_alt_outlined),
+                tooltip: 'Настройки',
+                onPressed: () => SettingsPage.open(context, _c),
+                icon: const Icon(Icons.settings_outlined),
               ),
-            IconButton(
-              tooltip: 'Настройки',
-              onPressed: () => SettingsPage.open(context, _c),
-              icon: const Icon(Icons.settings_outlined),
-            ),
-            IconButton(
-              tooltip: 'Добавить аккаунт',
-              onPressed: _loginAndLaunch,
-              icon: const Icon(Icons.person_add_alt_1),
-            ),
-          ],
-        ),
-        body: !_c.loaded
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ..._buildWarnings(),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    child: TextField(
-                      controller: _placeController,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.sports_esports_outlined),
-                        labelText: 'Игра (необязательно)',
-                        hintText: 'Ссылка или Place ID',
-                        border: OutlineInputBorder(),
-                        isDense: true,
+              const SizedBox(width: 8),
+            ],
+          ),
+          body: !_c.loaded
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ..._buildWarnings(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      child: TextField(
+                        controller: _placeController,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.sports_esports_outlined),
+                          hintText: 'Игра (необязательно): ссылка или Place ID',
+                        ),
                       ),
                     ),
-                  ),
-                  if (_c.macroPlayer.running)
-                    _MacrosStatus(
-                      onTap: () => MacrosPage.open(context, _c),
-                      onStop: _c.stopMacros,
+                    if (antiAfkOn)
+                      _AntiAfkStatus(
+                        nextRunAt: _c.antiAfk.nextRunAt!,
+                        robloxRunning: _c.anyRunning,
+                        onTap: () => SettingsPage.open(context, _c),
+                      ),
+                    if (_c.accounts.isNotEmpty) _buildCommandBar(),
+                    Expanded(
+                      child: _c.accounts.isEmpty ? _buildEmpty() : _buildList(),
                     ),
-                  if (_c.antiAfk.nextRunAt != null)
-                    _AntiAfkStatus(
-                      nextRunAt: _c.antiAfk.nextRunAt!,
-                      robloxRunning: _c.anyRunning,
-                      onTap: () => SettingsPage.open(context, _c),
-                    ),
-                  Expanded(
-                    child: _c.accounts.isEmpty ? _buildEmpty() : _buildList(),
-                  ),
-                ],
-              ),
-        bottomNavigationBar: _selected.isEmpty ? null : _buildLaunchBar(),
-      ),
+                  ],
+                ),
+          bottomNavigationBar: macrosOn && _c.accounts.isNotEmpty
+              ? _MacroBar(
+                  controller: _c,
+                  onRecord: _recordMacro,
+                  onStart: _startMacros,
+                  onManage: _openMacros,
+                )
+              : null,
+        );
+      },
     );
   }
 
@@ -198,7 +248,7 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       decoration: BoxDecoration(
         color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -273,6 +323,47 @@ class _HomePageState extends State<HomePage> {
     ];
   }
 
+  /// Строка над списком: запуск выбранных и добавление аккаунта.
+  Widget _buildCommandBar() {
+    final theme = Theme.of(context);
+    final busy = _c.launching.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          if (_selected.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                'Аккаунты · ${_c.accounts.length}',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else ...[
+            FilledButton.icon(
+              onPressed: busy ? null : _launchSelected,
+              icon: const Icon(Icons.play_arrow, size: 18),
+              label: Text('Запустить выбранные (${_selected.length})'),
+            ),
+            const SizedBox(width: 4),
+            TextButton(
+              onPressed: () => setState(_selected.clear),
+              child: const Text('Сбросить'),
+            ),
+          ],
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _loginAndLaunch,
+            icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+            label: const Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmpty() {
     return Center(
       child: Padding(
@@ -304,62 +395,49 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildList() {
+    final player = _c.macroPlayer;
+    final macrosOn = _c.settings.macros.enabled;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
         for (final account in _c.accounts)
-          _AccountTile(
-            account: account,
-            selected: _selected.contains(account.userId),
-            launching: _c.launching.contains(account.userId),
-            running: _c.isRunning(account),
-            onSelected: (value) => setState(
-              () => value
-                  ? _selected.add(account.userId)
-                  : _selected.remove(account.userId),
-            ),
-            onLaunch: () => _launch(account),
-            onRelogin: _loginAndLaunch,
-            onRemove: () => _confirmRemove(account),
-          ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: _loginAndLaunch,
-          icon: const Icon(Icons.add),
-          label: const Text('Добавить аккаунт'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLaunchBar() {
-    final busy = _c.launching.isNotEmpty;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        child: Row(
-          children: [
-            TextButton(
-              onPressed: () => setState(_selected.clear),
-              child: const Text('Сбросить'),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: busy ? null : _launchSelected,
-                icon: const Icon(Icons.play_arrow),
-                label: Text('Запустить выбранные (${_selected.length})'),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _AccountCard(
+              account: account,
+              selected: _selected.contains(account.userId),
+              launching: _c.launching.contains(account.userId),
+              running: _c.isRunning(account),
+              onSelected: (value) => setState(
+                () => value
+                    ? _selected.add(account.userId)
+                    : _selected.remove(account.userId),
               ),
+              onLaunch: () => _launch(account),
+              onRelogin: _loginAndLaunch,
+              onRemove: () => _confirmRemove(account),
+              macro: macrosOn && _c.isRunning(account)
+                  ? _MacroPicker(
+                      macros: _c.macros,
+                      choice: _c.macroChoiceFor(account),
+                      playing: player.isPlaying(account.userId),
+                      loops: player.loopsOf(account.userId),
+                      backward: player.isBackward(account.userId),
+                      locked: player.active || _c.macroRecorder.active,
+                      onChanged: (choice) => _c.setMacroChoice(account, choice),
+                      onRecord: _recordMacro,
+                      onManage: _openMacros,
+                    )
+                  : null,
             ),
-          ],
-        ),
-      ),
+          ),
+      ],
     );
   }
 }
 
-class _AccountTile extends StatelessWidget {
-  const _AccountTile({
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({
     required this.account,
     required this.selected,
     required this.launching,
@@ -368,6 +446,7 @@ class _AccountTile extends StatelessWidget {
     required this.onLaunch,
     required this.onRelogin,
     required this.onRemove,
+    this.macro,
   });
 
   final Account account;
@@ -381,93 +460,150 @@ class _AccountTile extends StatelessWidget {
   final VoidCallback onRelogin;
   final VoidCallback onRemove;
 
+  /// Выбор макроса под строкой аккаунта.
+  final Widget? macro;
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final colors = AppColors.of(context);
+    final light = theme.brightness == Brightness.light;
+    // Пока аватар не загрузился, у каждого аккаунта свой цвет.
+    final hue = (account.userId * 47 % 360).toDouble();
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      color: selected ? scheme.secondaryContainer : null,
+      color: selected ? colors.selectedCard : null,
+      shape: selected
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: colors.selectedCardBorder),
+            )
+          : null,
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => onSelected(!selected),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            children: [
-              Checkbox(
-                value: selected,
-                onChanged: (v) => onSelected(v ?? false),
-              ),
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: scheme.surfaceContainerHighest,
-                foregroundImage: account.avatarUrl == null
-                    ? null
-                    : NetworkImage(account.avatarUrl!),
-                child: Text(account.displayName.characters.first.toUpperCase()),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+        onTap: running ? null : () => onSelected(!selected),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: selected,
+                    onChanged: running ? null : (v) => onSelected(v ?? false),
+                  ),
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: HSLColor.fromAHSL(
+                      1,
+                      hue,
+                      light ? 0.7 : 0.3,
+                      light ? 0.9 : 0.3,
+                    ).toColor(),
+                    foregroundColor: HSLColor.fromAHSL(
+                      1,
+                      hue,
+                      light ? 0.55 : 0.8,
+                      light ? 0.3 : 0.88,
+                    ).toColor(),
+                    foregroundImage: account.avatarUrl == null
+                        ? null
+                        : NetworkImage(account.avatarUrl!),
+                    child: Text(
+                      account.displayName.characters.first.toUpperCase(),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Flexible(
-                          child: Text(
-                            account.displayName,
-                            style: Theme.of(context).textTheme.titleMedium,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                account.displayName,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (running) ...[
+                              const SizedBox(width: 8),
+                              const _InGameBadge(),
+                            ],
+                          ],
                         ),
-                        if (running) ...[
-                          const SizedBox(width: 8),
-                          const _InGameBadge(),
-                        ],
+                        Text(
+                          account.needsRelogin
+                              ? 'Сессия истекла — нужно войти заново'
+                              : '@${account.username}',
+                          style: TextStyle(
+                            color: account.needsRelogin
+                                ? scheme.error
+                                : scheme.onSurfaceVariant,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
-                    Text(
-                      account.needsRelogin
-                          ? 'Сессия истекла — нужно войти заново'
-                          : '@${account.username}',
-                      style: TextStyle(
-                        color: account.needsRelogin
-                            ? scheme.error
-                            : scheme.outline,
+                  ),
+                  if (launching)
+                    const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
                       ),
-                      overflow: TextOverflow.ellipsis,
+                    )
+                  // Окно уже открыто: второй запуск выбьет первую сессию.
+                  else if (running)
+                    const SizedBox.shrink()
+                  else if (account.needsRelogin)
+                    IconButton.outlined(
+                      tooltip: 'Войти заново',
+                      onPressed: onLaunch,
+                      style: IconButton.styleFrom(
+                        foregroundColor: scheme.error,
+                        side: BorderSide(color: scheme.error),
+                      ),
+                      icon: const Icon(Icons.login),
+                    )
+                  else
+                    IconButton.filled(
+                      tooltip: 'Запустить',
+                      onPressed: onLaunch,
+                      icon: const Icon(Icons.play_arrow),
                     ),
-                  ],
-                ),
-              ),
-              if (launching)
-                const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox.square(
-                    dimension: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  PopupMenuButton<VoidCallback>(
+                    icon: const Icon(Icons.more_horiz),
+                    onSelected: (action) => action(),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: onRelogin,
+                        child: const Text('Войти заново'),
+                      ),
+                      PopupMenuItem(
+                        value: onRemove,
+                        child: const Text('Удалить'),
+                      ),
+                    ],
                   ),
-                )
-              else
-                IconButton.filledTonal(
-                  tooltip: account.needsRelogin ? 'Войти заново' : 'Запустить',
-                  onPressed: onLaunch,
-                  icon: Icon(
-                    account.needsRelogin ? Icons.login : Icons.play_arrow,
-                  ),
-                ),
-              PopupMenuButton<VoidCallback>(
-                onSelected: (action) => action(),
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: onRelogin,
-                    child: const Text('Войти заново'),
-                  ),
-                  PopupMenuItem(value: onRemove, child: const Text('Удалить')),
                 ],
               ),
+            ),
+            if (macro != null) ...[
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(56, 8, 12, 10),
+                child: macro,
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -477,19 +613,472 @@ class _AccountTile extends StatelessWidget {
 class _InGameBadge extends StatelessWidget {
   const _InGameBadge();
 
-  static const _green = Color(0xFF22C55E);
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+      decoration: BoxDecoration(
+        color: colors.successContainer,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        'в игре',
+        style: TextStyle(
+          color: colors.success,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+const _playModes = [
+  (MacroPlayMode.once, Icons.arrow_forward, 'Один раз'),
+  (MacroPlayMode.loop, Icons.repeat, 'По кругу'),
+  (MacroPlayMode.pingPong, Icons.swap_horiz, 'Туда-обратно'),
+];
+
+/// Выбор макроса и режима в карточке запущенного аккаунта.
+class _MacroPicker extends StatelessWidget {
+  const _MacroPicker({
+    required this.macros,
+    required this.choice,
+    required this.playing,
+    required this.loops,
+    required this.backward,
+    required this.locked,
+    required this.onChanged,
+    required this.onRecord,
+    required this.onManage,
+  });
+
+  final List<Macro> macros;
+  final MacroChoice choice;
+  final bool playing;
+  final int loops;
+  final bool backward;
+
+  /// Макросы запущены или идёт запись: выбор менять нельзя.
+  final bool locked;
+  final ValueChanged<MacroChoice> onChanged;
+  final VoidCallback onRecord;
+  final VoidCallback onManage;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final selected = macros.where((m) => m.id == choice.macroId).firstOrNull;
+    final (_, modeIcon, modeLabel) = _playModes.firstWhere(
+      (m) => m.$1 == choice.mode,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: PopupMenuButton<VoidCallback>(
+                enabled: !locked,
+                tooltip: 'Макрос для этого окна',
+                position: PopupMenuPosition.under,
+                onSelected: (action) => action(),
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    height: 40,
+                    value: () => onChanged(
+                      MacroChoice(macroId: null, mode: choice.mode),
+                    ),
+                    child: _MenuRow(
+                      checked: selected == null,
+                      label: 'Без макроса',
+                    ),
+                  ),
+                  for (final m in macros)
+                    PopupMenuItem(
+                      height: 40,
+                      value: () => onChanged(
+                        MacroChoice(macroId: m.id, mode: choice.mode),
+                      ),
+                      child: _MenuRow(
+                        checked: selected?.id == m.id,
+                        label: m.name,
+                        trailing: formatMacroDuration(m.durationMs),
+                      ),
+                    ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem(
+                    height: 40,
+                    value: onRecord,
+                    child: _MenuRow(
+                      icon: Icons.fiber_manual_record,
+                      iconColor: colors.record,
+                      label: 'Записать новый…',
+                    ),
+                  ),
+                  PopupMenuItem(
+                    height: 40,
+                    value: onManage,
+                    child: const _MenuRow(
+                      icon: Icons.edit_outlined,
+                      label: 'Управление макросами…',
+                    ),
+                  ),
+                ],
+                child: _ComboBox(
+                  label: selected?.name ?? 'Без макроса',
+                  placeholder: selected == null,
+                  enabled: !locked,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            PopupMenuButton<MacroPlayMode>(
+              enabled: !locked,
+              tooltip: 'Как повторять',
+              position: PopupMenuPosition.under,
+              onSelected: (mode) =>
+                  onChanged(MacroChoice(macroId: choice.macroId, mode: mode)),
+              itemBuilder: (_) => [
+                for (final (mode, icon, label) in _playModes)
+                  PopupMenuItem(
+                    height: 40,
+                    value: mode,
+                    child: _MenuRow(
+                      checked: mode == choice.mode,
+                      icon: icon,
+                      label: label,
+                    ),
+                  ),
+              ],
+              child: _ComboBox(
+                icon: modeIcon,
+                label: modeLabel,
+                enabled: !locked,
+              ),
+            ),
+          ],
+        ),
+        if (playing)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 2),
+            child: Text(
+              switch (choice.mode) {
+                MacroPlayMode.once => '● выполняется',
+                MacroPlayMode.loop => '● выполняется · круг ${loops + 1}',
+                MacroPlayMode.pingPong =>
+                  '● выполняется · круг ${loops + 1}, '
+                      '${backward ? 'обратно' : 'туда'}',
+              },
+              style: TextStyle(
+                color: colors.success,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Поле выпадающего списка в стиле Windows.
+class _ComboBox extends StatelessWidget {
+  const _ComboBox({
+    required this.label,
+    this.icon,
+    this.placeholder = false,
+    this.enabled = true,
+  });
+
+  final String label;
+  final IconData? icon;
+  final bool placeholder;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Opacity(
+      opacity: enabled ? 1 : 0.6,
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.only(left: 10, right: 6),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh,
+          border: Border.all(color: AppColors.of(context).controlBorder),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 16, color: scheme.onSurface),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              fit: icon == null ? FlexFit.tight : FlexFit.loose,
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: placeholder ? scheme.onSurfaceVariant : null,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.expand_more, size: 18, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Пункт выпадающего меню: отметка или значок, название и подпись справа.
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({
+    required this.label,
+    this.checked = false,
+    this.icon,
+    this.iconColor,
+    this.trailing,
+  });
+
+  final String label;
+  final bool checked;
+  final IconData? icon;
+  final Color? iconColor;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        SizedBox(
+          width: 20,
+          child: checked
+              ? Icon(Icons.check, size: 18, color: scheme.primary)
+              : null,
+        ),
+        const SizedBox(width: 6),
+        if (icon != null) ...[
+          Icon(icon, size: 18, color: iconColor ?? scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+        ],
+        Expanded(child: Text(label, overflow: TextOverflow.ellipsis)),
+        if (trailing != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Text(
+              trailing!,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Панель макросов внизу главного экрана: запуск, запись и остановка.
+class _MacroBar extends StatelessWidget {
+  const _MacroBar({
+    required this.controller,
+    required this.onRecord,
+    required this.onStart,
+    required this.onManage,
+  });
+
+  final AppController controller;
+  final VoidCallback onRecord;
+  final VoidCallback onStart;
+  final VoidCallback onManage;
+
+  static String _inWindows(int n) =>
+      n % 10 == 1 && n % 100 != 11 ? 'в $n окне' : 'в $n окнах';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final colors = AppColors.of(context);
+    final recorder = controller.macroRecorder;
+    final player = controller.macroPlayer;
+
+    final Widget leading;
+    final String title;
+    final String subtitle;
+    final List<Widget> actions;
+    if (recorder.waiting) {
+      leading = Icon(Icons.keyboard_outlined, color: scheme.primary);
+      title = 'Ждёт F8';
+      subtitle = 'Перейдите в окно Roblox и нажмите F8';
+      actions = [
+        OutlinedButton(
+          onPressed: controller.cancelRecording,
+          child: const Text('Отмена'),
+        ),
+      ];
+    } else if (recorder.recording) {
+      leading = _Dot(color: colors.record);
+      title = 'Идёт запись';
+      subtitle = 'F8 в окне Roblox — закончить';
+      actions = [
+        OutlinedButton.icon(
+          onPressed: controller.stopRecording,
+          icon: const Icon(Icons.stop, size: 18),
+          label: const Text('Закончить'),
+        ),
+      ];
+    } else if (player.waiting) {
+      leading = Icon(Icons.keyboard_outlined, color: scheme.primary);
+      title = 'Ждёт F8';
+      subtitle = 'Перейдите в окно Roblox и нажмите F8 — макросы запустятся';
+      actions = [
+        OutlinedButton(
+          onPressed: controller.stopMacros,
+          child: const Text('Отмена'),
+        ),
+      ];
+    } else if (player.running) {
+      final playing = controller.runningAccounts
+          .where((a) => player.isPlaying(a.userId))
+          .length;
+      leading = _Dot(color: colors.success);
+      title = 'Макросы выполняются';
+      subtitle = '${_inWindows(playing)} · F8 — остановить';
+      actions = [
+        OutlinedButton.icon(
+          onPressed: controller.stopMacros,
+          icon: const Icon(Icons.stop, size: 18),
+          label: const Text('Остановить'),
+        ),
+      ];
+    } else {
+      final running = controller.runningAccounts.length;
+      final chosen = controller.accountsWithMacro.length;
+      leading = Icon(Icons.keyboard_outlined, color: scheme.onSurfaceVariant);
+      title = 'Макросы';
+      subtitle = running == 0
+          ? 'Запустите аккаунт, чтобы выбрать макрос'
+          : chosen == 0
+          ? 'Выберите макрос в карточке аккаунта'
+          : 'Выбраны ${_inWindows(chosen)}';
+      actions = [
+        TextButton.icon(
+          onPressed: running == 0 ? null : onRecord,
+          icon: Icon(
+            Icons.fiber_manual_record,
+            size: 14,
+            color: running == 0 ? null : colors.record,
+          ),
+          label: const Text('Записать'),
+        ),
+        const SizedBox(width: 4),
+        FilledButton.icon(
+          onPressed: chosen == 0 ? null : onStart,
+          icon: const Icon(Icons.play_arrow, size: 18),
+          label: const Text('Запустить'),
+        ),
+      ];
+    }
+
+    return Material(
+      color: colors.bar,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: scheme.outlineVariant)),
+          ),
+          padding: const EdgeInsets.fromLTRB(8, 10, 14, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: 'Сохранённые макросы',
+                  child: InkWell(
+                    onTap: onManage,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Row(
+                        children: [
+                          SizedBox.square(
+                            dimension: 24,
+                            child: Center(child: leading),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        title,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.chevron_right,
+                                      size: 18,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  subtitle,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ...actions,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Точка с ореолом: идёт запись или выполняются макросы.
+class _Dot extends StatelessWidget {
+  const _Dot({required this.color});
+
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      width: 10,
+      height: 10,
       decoration: BoxDecoration(
-        color: _green.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Text(
-        'в игре',
-        style: TextStyle(color: _green, fontSize: 12),
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(color: color.withValues(alpha: 0.25), spreadRadius: 4),
+        ],
       ),
     );
   }
@@ -539,81 +1128,23 @@ class _AntiAfkStatusState extends State<_AntiAfkStatus> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Material(
-        color: scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(12),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
           onTap: widget.onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             child: Row(
               children: [
                 Icon(
                   Icons.shield_outlined,
                   size: 20,
-                  color: scheme.onSecondaryContainer,
+                  color: AppColors.of(context).success,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _text,
-                    style: TextStyle(color: scheme.onSecondaryContainer),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Полоска на главном экране, пока выполняются макросы.
-class _MacrosStatus extends StatelessWidget {
-  const _MacrosStatus({required this.onTap, required this.onStop});
-
-  final VoidCallback onTap;
-  final VoidCallback onStop;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Material(
-        color: scheme.tertiaryContainer,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.keyboard_alt_outlined,
-                  size: 20,
-                  color: scheme.onTertiaryContainer,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Макросы выполняются · F8 — остановить',
-                    style: TextStyle(color: scheme.onTertiaryContainer),
-                  ),
-                ),
-                TextButton(
-                  onPressed: onStop,
-                  style: TextButton.styleFrom(
-                    foregroundColor: scheme.onTertiaryContainer,
-                  ),
-                  child: const Text('Стоп'),
-                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(_text)),
               ],
             ),
           ),

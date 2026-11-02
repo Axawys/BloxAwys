@@ -51,7 +51,7 @@ class RawMouse {
 }
 
 /// Получает ввод с клавиатуры и мыши через Raw Input, пока запущен,
-/// и ловит горячую клавишу остановки F8.
+/// и ловит горячую клавишу F8.
 ///
 /// Ввод приходит в скрытое служебное окно (HWND_MESSAGE) с флагом
 /// RIDEV_INPUTSINK, то есть и тогда, когда активно другое окно. Глобальные
@@ -59,7 +59,7 @@ class RawMouse {
 /// на Windows Flutter выполняет Dart в потоке окна, поэтому она вызывается
 /// синхронно из цикла сообщений.
 class RawInputListener {
-  static const stopKeyScanCode = 0x42; // F8
+  static const hotkeyScanCode = 0x42; // F8
 
   static const _wmInput = 0x00FF;
   static const _wmHotkey = 0x0312;
@@ -81,7 +81,7 @@ class RawInputListener {
 
   void Function(RawKey)? _onKey;
   void Function(RawMouse)? _onMouse;
-  void Function()? _onStop;
+  void Function()? _onHotkey;
 
   static int _hwnd = 0;
   static RawInputListener? _active;
@@ -92,13 +92,13 @@ class RawInputListener {
   void start({
     required void Function(RawKey) onKey,
     required void Function(RawMouse) onMouse,
-    required void Function() onStop,
+    required void Function() onHotkey,
   }) {
     if (!supported) return;
     _active?.stop();
     _onKey = onKey;
     _onMouse = onMouse;
-    _onStop = onStop;
+    _onHotkey = onHotkey;
     _active = this;
     final hwnd = _ensureWindow();
     _register(hwnd, _ridevInputSink);
@@ -108,7 +108,7 @@ class RawInputListener {
   void stop() {
     if (!running) return;
     _active = null;
-    _onKey = _onMouse = _onStop = null;
+    _onKey = _onMouse = _onHotkey = null;
     _register(0, _ridevRemove);
     win.unregisterHotKey(_hwnd, _hotkeyId);
   }
@@ -172,7 +172,7 @@ class RawInputListener {
     if (msg == _wmInput) {
       _active?._handleInput(lParam);
     } else if (msg == _wmHotkey && wParam == _hotkeyId) {
-      _active?._onStop?.call();
+      _active?._onHotkey?.call();
       return 0;
     }
     return win.defWindowProc(hwnd, msg, wParam, lParam);

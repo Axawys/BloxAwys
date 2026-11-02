@@ -54,6 +54,7 @@ class RobloxWindows {
   static const _keyeventfExtendedKey = 0x0001;
   static const _keyeventfKeyUp = 0x0002;
   static const _keyeventfScancode = 0x0008;
+  static const _mbIconExclamation = 0x30;
 
   bool get supported => Platform.isWindows;
 
@@ -121,6 +122,23 @@ class RobloxWindows {
   }
 
   int foreground() => supported ? win.getForegroundWindow() : 0;
+
+  /// ID процесса, которому принадлежит окно; 0, если окна нет.
+  int pidOf(int hwnd) {
+    if (!supported || hwnd == 0) return 0;
+    final pid = calloc<Uint32>();
+    try {
+      win.getWindowThreadProcessId(hwnd, pid);
+      return pid.value;
+    } finally {
+      calloc.free(pid);
+    }
+  }
+
+  /// Системный звук ошибки, когда горячая клавиша нажата не там.
+  void beep() {
+    if (supported) win.messageBeep(_mbIconExclamation);
+  }
 
   /// Разворачивает окно, если оно свёрнуто.
   void restore(int hwnd) {

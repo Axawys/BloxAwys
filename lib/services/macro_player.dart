@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/macro.dart';
 import 'raw_input.dart';
+import 'recording_indicator.dart';
 import 'roblox_windows.dart';
 
 /// Какой макрос запускать в окне аккаунта.
@@ -12,26 +13,31 @@ class MacroAssignment {
     required this.userId,
     required this.pid,
     required this.macro,
-    required this.loop,
+    required this.mode,
   });
 
   final int userId;
   final int pid;
   final Macro macro;
-  final bool loop;
+  final MacroPlayMode mode;
 }
 
 /// Проигрывает макросы в нескольких окнах Roblox.
+///
+/// Макросы стартуют не сразу: сначала плеер ждёт F8 в одном из их окон.
+/// Так пользователь сам делает окно Roblox активным, а клиент после горячей
+/// клавиши получает от Windows право переключать фокус между окнами.
 ///
 /// Windows отдаёт ввод только активному окну, поэтому действия всех макросов
 /// выполняются в одном потоке по времени, а перед действием для другого окна
 /// фокус переключается на него. Зажатые клавиши при уходе из окна
 /// отпускаются и снова нажимаются при возвращении.
 class MacroPlayer extends ChangeNotifier {
-  MacroPlayer(this._windows, this._input);
+  MacroPlayer(this._windows, this._input, [this._indicator]);
 
   final RobloxWindows _windows;
   final RawInputListener _input;
+  final RecordingIndicator? _indicator;
 
   /// Сколько ждать после переключения окна, прежде чем нажимать.
   static const _switchDelay = Duration(milliseconds: 120);
@@ -43,6 +49,7 @@ class MacroPlayer extends ChangeNotifier {
   static const _userMoveThreshold = 25;
 
   final _runs = <_Run>[];
+  bool _waiting = false;
   Completer<void>? _stopSignal;
   bool _stopOnUserInput = true;
   int _userMove = 0;
@@ -52,24 +59,37 @@ class MacroPlayer extends ChangeNotifier {
   /// или остановлены кнопкой.
   String? stopReason;
 
+  /// Ждёт F8, чтобы начать.
+  bool get waiting => _waiting;
+
+  /// Макросы выполняются.
   bool get running => _stopSignal != null;
 
-  bool isPlaying(int userId) => _runs.any((r) => r.userId == userId);
+  /// Ждёт F8 или выполняет макросы.
+  bool get active => waiting || running;
+
+  bool isPlaying(int userId) => running && _runs.any((r) => r.userId == userId);
 
   /// Сколько кругов макрос уже прошёл в окне аккаунта.
-  int loopsOf(int userId) {
+  int loopsOf(int userId) => _runOf(userId)?.loops ?? 0;
+
+  /// Макрос в окне аккаунта сейчас идёт обратным ходом.
+  bool isBackward(int userId) => _runOf(userId)?.backward ?? false;
+
+  _Run? _runOf(int userId) {
     for (final r in _runs) {
-      if (r.userId == userId) return r.loops;
+      if (r.userId == userId) return r;
     }
-    return 0;
+    return null;
   }
 
-  /// Запускает макросы и возвращает аккаунты, чьи окна не нашлись.
+  /// Готовит макросы и ждёт F8 в окне одного из них. Возвращает аккаунты,
+  /// чьи окна не нашлись.
   List<int> start(
     List<MacroAssignment> assignments, {
     bool stopOnUserInput = true,
   }) {
-    if (running) throw StateError('Макросы уже запущены');
+    if (active) throw StateError('Макросы уже запущены');
     final missing = <int>[];
     final now = DateTime.now();
     for (final a in assignments) {
@@ -85,19 +105,53 @@ class MacroPlayer extends ChangeNotifier {
 
     stopReason = null;
     _stopOnUserInput = stopOnUserInput;
-    _userMove = 0;
-    _stopSignal = Completer<void>();
-    _input.start(
-      onKey: _onUserKey,
-      onMouse: _onUserMouse,
-      onStop: () => stop(),
+    _waiting = true;
+    _input.start(onKey: _onUserKey, onMouse: _onUserMouse, onHotkey: _onHotkey);
+    _indicator?.show(
+      'Нажмите F8, чтобы запустить макросы',
+      style: IndicatorStyle.waiting,
+      over: _isRunWindow,
     );
     notifyListeners();
-    unawaited(_loop(_windows.foreground()));
     return missing;
   }
 
+  bool _isRunWindow(int hwnd) => _runs.any((r) => r.hwnd == hwnd);
+
+  void _onHotkey() {
+    if (running) return stop();
+    final window = _windows.foreground();
+    if (!_isRunWindow(window)) {
+      // F8 нажата не в окне, где ждут макросы.
+      _windows.beep();
+      return;
+    }
+    _waiting = false;
+    _userMove = 0;
+    final now = DateTime.now();
+    for (final r in _runs) {
+      r.loopStart = now;
+    }
+    _stopSignal = Completer<void>();
+    _indicator?.show(
+      '●  Макросы выполняются · F8 — остановить',
+      style: IndicatorStyle.playing,
+      over: _isRunWindow,
+    );
+    notifyListeners();
+    unawaited(_loop(window));
+  }
+
+  /// Останавливает макросы или отменяет ожидание F8.
   void stop([String? reason]) {
+    if (_waiting) {
+      _waiting = false;
+      _runs.clear();
+      _input.stop();
+      _indicator?.hide();
+      notifyListeners();
+      return;
+    }
     final signal = _stopSignal;
     if (signal == null || signal.isCompleted) return;
     stopReason = reason;
@@ -127,11 +181,11 @@ class MacroPlayer extends ChangeNotifier {
         if (late > Duration.zero) run.loopStart = run.loopStart.add(late);
 
         _perform(run, run.current);
-        final loops = run.loops;
+        final progress = (run.loops, run.backward);
         if (!run.advance()) {
           _finishRun(run);
           notifyListeners();
-        } else if (run.loops != loops) {
+        } else if ((run.loops, run.backward) != progress) {
           notifyListeners();
         }
       }
@@ -142,8 +196,11 @@ class MacroPlayer extends ChangeNotifier {
       }
       _runs.clear();
       _input.stop();
+      _indicator?.hide();
       _stopSignal = null;
-      if (previousWindow != 0) _windows.focus(previousWindow);
+      if (previousWindow != 0 && _windows.foreground() != previousWindow) {
+        _windows.focus(previousWindow);
+      }
       notifyListeners();
     }
   }
@@ -207,14 +264,14 @@ class MacroPlayer extends ChangeNotifier {
   }
 
   void _onUserKey(RawKey key) {
-    if (!_stopOnUserInput || !key.physical || !key.down) return;
+    if (!running || !_stopOnUserInput || !key.physical || !key.down) return;
     // F8 обрабатывается горячей клавишей.
-    if (key.scanCode == RawInputListener.stopKeyScanCode) return;
+    if (key.scanCode == RawInputListener.hotkeyScanCode) return;
     stop('Вы нажали клавишу, макросы остановлены');
   }
 
   void _onUserMouse(RawMouse mouse) {
-    if (!_stopOnUserInput || !mouse.physical) return;
+    if (!running || !_stopOnUserInput || !mouse.physical) return;
     if (mouse.buttonFlags != 0) {
       stop('Вы нажали кнопку мыши, макросы остановлены');
       return;
@@ -233,18 +290,25 @@ class MacroPlayer extends ChangeNotifier {
 }
 
 class _Run {
-  _Run(this.assignment, this.hwnd, this.loopStart);
+  _Run(this.assignment, this.hwnd, this.loopStart)
+    : _mirrored = assignment.mode == MacroPlayMode.pingPong
+          ? assignment.macro.mirrored()
+          : null;
 
   final MacroAssignment assignment;
   final int hwnd;
+  final Macro? _mirrored;
   DateTime loopStart;
   int index = 0;
   int loops = 0;
+
+  /// Идёт зеркальный круг (режим «туда и обратно»).
+  bool get backward => assignment.mode == MacroPlayMode.pingPong && loops.isOdd;
   final keys = <(int, bool)>{};
   final buttons = <MouseButton>{};
 
   int get userId => assignment.userId;
-  Macro get macro => assignment.macro;
+  Macro get macro => backward ? _mirrored! : assignment.macro;
   MacroEvent get current => macro.events[index];
   DateTime get dueAt => loopStart.add(Duration(milliseconds: current.t));
 
@@ -252,12 +316,18 @@ class _Run {
   bool advance() {
     index++;
     if (index < macro.events.length) return true;
-    if (!assignment.loop) return false;
-    index = 0;
-    loops++;
     final length = macro.durationMs < MacroPlayer._minLoopMs
         ? MacroPlayer._minLoopMs
         : macro.durationMs;
+    switch (assignment.mode) {
+      case MacroPlayMode.once:
+        return false;
+      case MacroPlayMode.loop:
+      case MacroPlayMode.pingPong:
+        // В режиме «туда и обратно» чётность круга задаёт направление.
+        loops++;
+    }
+    index = 0;
     loopStart = loopStart.add(Duration(milliseconds: length));
     return true;
   }

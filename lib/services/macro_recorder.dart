@@ -1,7 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../models/macro.dart';
 import 'raw_input.dart';
+import 'recording_indicator.dart';
 import 'roblox_windows.dart';
 
 class MacroException implements Exception {
@@ -12,21 +15,30 @@ class MacroException implements Exception {
   String toString() => message;
 }
 
-/// Записывает клавиатуру и мышь в одном окне Roblox до нажатия F8.
+/// Записанный макрос и процесс Roblox, в окне которого он записан.
+typedef RecordedMacro = ({Macro macro, int pid});
+
+/// Записывает клавиатуру и мышь в одном окне Roblox.
 ///
-/// Записывается только ввод с настоящих устройств и только пока активно
-/// выбранное окно.
-class MacroRecorder {
-  MacroRecorder(this._windows, this._input);
+/// Запись начинается не сразу: сначала клиент ждёт F8, чтобы пользователь
+/// успел вернуться в игру. Записывается окно, активное в момент нажатия,
+/// до следующего F8. Записывается только ввод с настоящих устройств и только
+/// пока активно это окно.
+class MacroRecorder extends ChangeNotifier {
+  MacroRecorder(this._windows, this._input, [this._indicator]);
 
   final RobloxWindows _windows;
   final RawInputListener _input;
+  final RecordingIndicator? _indicator;
 
   /// Мелкие движения мыши склеиваются в одно действие примерно за кадр.
   static const _moveStepMs = 15;
 
-  Completer<Macro?>? _done;
+  Completer<RecordedMacro?>? _done;
+  bool _recording = false;
+  Set<int> _pids = {};
   int _target = 0;
+  int _targetPid = 0;
   bool _mouseMovement = true;
   final _clock = Stopwatch();
   final _events = <MacroEvent>[];
@@ -36,20 +48,51 @@ class MacroRecorder {
   int _pendingDy = 0;
   int _lastMoveMs = 0;
 
-  bool get recording => _done != null;
+  /// Запись запущена: ждёт F8 или уже идёт.
+  bool get active => _done != null;
 
-  /// Делает окно процесса [pid] активным и записывает ввод в нём.
-  /// Завершается по F8 или [stop]; null — запись отменена или пуста.
-  Future<Macro?> record({required int pid, bool mouseMovement = true}) {
-    if (recording) throw MacroException('Запись уже идёт');
-    final hwnd = _windows.windowForPid(pid);
-    if (hwnd == null) throw MacroException('Окно Roblox не найдено');
-    _windows.restore(hwnd);
-    if (!_windows.focus(hwnd)) {
-      throw MacroException('Не удалось сделать окно Roblox активным');
-    }
-    _target = hwnd;
+  /// Ждёт F8, чтобы начать.
+  bool get waiting => active && !_recording;
+
+  /// Записывает ввод.
+  bool get recording => active && _recording;
+
+  /// Ждёт F8 в окне одного из процессов Roblox [pids] и записывает ввод
+  /// в нём до следующего F8 или [stop]; null — запись отменена или пуста.
+  Future<RecordedMacro?> record({
+    required Set<int> pids,
+    bool mouseMovement = true,
+  }) {
+    if (active) throw MacroException('Запись уже идёт');
+    _pids = pids;
     _mouseMovement = mouseMovement;
+    final done = _done = Completer<RecordedMacro?>();
+    _input.start(onKey: _onKey, onMouse: _onMouse, onHotkey: _onHotkey);
+    _indicator?.show(
+      'Нажмите F8, чтобы начать запись',
+      style: IndicatorStyle.waiting,
+      over: (hwnd) => _pids.contains(_windows.pidOf(hwnd)),
+    );
+    notifyListeners();
+    return done.future;
+  }
+
+  void _onHotkey() {
+    if (_recording) return stop();
+    final hwnd = _windows.foreground();
+    final pid = _windows.pidOf(hwnd);
+    if (!_pids.contains(pid)) {
+      // F8 нажата не в окне Roblox, запущенном из клиента.
+      _windows.beep();
+      return;
+    }
+    _begin(hwnd, pid);
+  }
+
+  void _begin(int hwnd, int pid) {
+    _recording = true;
+    _target = hwnd;
+    _targetPid = pid;
     _events.clear();
     _keys.clear();
     _buttons.clear();
@@ -58,23 +101,27 @@ class MacroRecorder {
     _clock
       ..reset()
       ..start();
-    final done = _done = Completer<Macro?>();
-    _input.start(onKey: _onKey, onMouse: _onMouse, onStop: stop);
-    return done.future;
+    _indicator?.show(
+      '●  Идёт запись · F8 — закончить',
+      style: IndicatorStyle.recording,
+      over: (hwnd) => hwnd == _target,
+    );
+    notifyListeners();
   }
 
-  /// Заканчивает запись и отдаёт макрос.
+  /// Заканчивает запись и отдаёт макрос. Если F8 ещё не нажимали,
+  /// отменяет запись.
   void stop() => _finish(keep: true);
 
-  /// Прерывает запись без сохранения.
+  /// Прерывает запись или ожидание F8 без сохранения.
   void cancel() => _finish(keep: false);
 
   bool get _inTarget => _windows.foreground() == _target;
   int get _now => _clock.elapsedMilliseconds;
 
   void _onKey(RawKey key) {
-    if (!key.physical) return;
-    if (key.scanCode == RawInputListener.stopKeyScanCode && !key.extended) {
+    if (!_recording || !key.physical) return;
+    if (key.scanCode == RawInputListener.hotkeyScanCode && !key.extended) {
       return;
     }
     final id = (key.scanCode, key.extended);
@@ -98,7 +145,7 @@ class MacroRecorder {
   }
 
   void _onMouse(RawMouse mouse) {
-    if (!mouse.physical) return;
+    if (!_recording || !mouse.physical) return;
     if (_mouseMovement && (mouse.dx != 0 || mouse.dy != 0) && _inTarget) {
       _pendingDx += mouse.dx;
       _pendingDy += mouse.dy;
@@ -157,7 +204,15 @@ class MacroRecorder {
     final done = _done;
     if (done == null) return;
     _done = null;
+    final recorded = _recording;
+    _recording = false;
     _input.stop();
+    _indicator?.hide();
+    notifyListeners();
+    if (!recorded) {
+      done.complete(null);
+      return;
+    }
     _flushMove();
     final stopMs = _now;
     _clock.stop();
@@ -185,8 +240,9 @@ class MacroRecorder {
     // Время отсчитывается от первого действия, а пауза до F8 остаётся
     // в конце круга.
     final start = _events.first.t;
-    done.complete(
-      Macro(
+    done.complete((
+      pid: _targetPid,
+      macro: Macro(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         name: '',
         durationMs: stopMs - start + 1,
@@ -206,6 +262,6 @@ class MacroRecorder {
             ),
         ],
       ),
-    );
+    ));
   }
 }

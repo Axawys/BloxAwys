@@ -9,6 +9,13 @@ class RobloxNotFoundException implements Exception {
       'Roblox не найден. Установите его с roblox.com и перезапустите клиент.';
 }
 
+/// У аккаунта уже открыто окно Roblox. Второе окно под тем же аккаунтом
+/// Roblox не поддерживает: сессии начинают выбивать друг друга.
+class AlreadyRunningException implements Exception {
+  @override
+  String toString() => 'Окно Roblox этого аккаунта уже открыто';
+}
+
 /// Ищет установленный RobloxPlayerBeta.exe и запускает его с тикетом.
 class RobloxLauncher {
   static const _exeName = 'RobloxPlayerBeta.exe';

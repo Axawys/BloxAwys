@@ -4,8 +4,11 @@ import '../app_controller.dart';
 import '../models/account.dart';
 import '../models/macro.dart';
 import '../services/macro_recorder.dart';
+import 'theme.dart';
 
-class MacrosPage extends StatefulWidget {
+/// Сохранённые макросы: запись, переименование и удаление. Какой макрос
+/// выполнять в каком окне, выбирается на главном экране.
+class MacrosPage extends StatelessWidget {
   const MacrosPage({super.key, required this.controller});
 
   final AppController controller;
@@ -16,136 +19,16 @@ class MacrosPage extends StatefulWidget {
     );
   }
 
-  @override
-  State<MacrosPage> createState() => _MacrosPageState();
-}
-
-class _MacrosPageState extends State<MacrosPage> {
-  AppController get _c => widget.controller;
-
-  void _snack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _record() async {
-    final running = _c.runningAccounts;
-    if (running.isEmpty) {
-      _snack('Сначала запустите аккаунт на главном экране');
-      return;
-    }
-    final account = running.length == 1
-        ? running.single
-        : await showDialog<Account>(
-            context: context,
-            builder: (context) => SimpleDialog(
-              title: const Text('В каком окне записывать?'),
-              children: [
-                for (final a in running)
-                  SimpleDialogOption(
-                    onPressed: () => Navigator.pop(context, a),
-                    child: Text(a.displayName),
-                  ),
-              ],
-            ),
-          );
-    if (account == null || !mounted) return;
-
-    final start = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Запись в окне ${account.displayName}'),
-        content: const Text(
-          'Окно Roblox станет активным, и BloxAwys начнёт записывать '
-          'клавиатуру и мышь в нём. Чтобы закончить, нажмите F8.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Начать запись'),
-          ),
-        ],
-      ),
-    );
-    if (start != true || !mounted) return;
-
-    final Macro? macro;
-    try {
-      macro = await _c.recordMacro(account);
-    } on MacroException catch (e) {
-      _snack('$e');
-      return;
-    }
-    if (!mounted) return;
-    if (macro == null) {
-      _snack('Ничего не записано');
-      return;
-    }
+  Future<void> _rename(BuildContext context, Macro macro) async {
     final name = await _askName(
-      title: 'Сохранить макрос',
-      initial: 'Макрос ${_c.macros.length + 1}',
-      details:
-          '${_formatDuration(macro.durationMs)} · ${_actions(macro.events.length)}',
+      context,
+      title: 'Переименовать',
+      initial: macro.name,
     );
-    if (name == null) return;
-    await _c.addMacro(macro, name);
-    // Только что записанный макрос сразу выбирается для этого окна.
-    if (_c.macroChoiceFor(account).macroId == null) {
-      _c.setMacroChoice(account, MacroChoice(macroId: macro.id));
-    }
+    if (name != null) await controller.renameMacro(macro, name);
   }
 
-  Future<String?> _askName({
-    required String title,
-    required String initial,
-    String? details,
-  }) {
-    final field = TextEditingController(text: initial);
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (details != null) ...[Text(details), const SizedBox(height: 16)],
-            TextField(
-              controller: field,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Название',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (v) => Navigator.pop(context, v.trim()),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, field.text.trim()),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    ).then((v) => v == null || v.isEmpty ? null : v);
-  }
-
-  Future<void> _rename(Macro macro) async {
-    final name = await _askName(title: 'Переименовать', initial: macro.name);
-    if (name != null) await _c.renameMacro(macro, name);
-  }
-
-  Future<void> _delete(Macro macro) async {
+  Future<void> _delete(BuildContext context, Macro macro) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -163,28 +46,7 @@ class _MacrosPageState extends State<MacrosPage> {
         ],
       ),
     );
-    if (ok == true) await _c.deleteMacro(macro);
-  }
-
-  void _startOrStop() {
-    if (_c.macroPlayer.running) {
-      _c.stopMacros();
-      return;
-    }
-    final chosen = _c.runningAccounts.any(
-      (a) => _c.macros.any((m) => m.id == _c.macroChoiceFor(a).macroId),
-    );
-    if (!chosen) {
-      _snack('Выберите макрос хотя бы для одного окна');
-      return;
-    }
-    final missing = _c.startMacros();
-    if (missing.isNotEmpty) {
-      _snack(
-        'Не нашлось окно Roblox: '
-        '${missing.map((a) => a.displayName).join(', ')}',
-      );
-    }
+    if (ok == true) await controller.deleteMacro(macro);
   }
 
   @override
@@ -192,141 +54,97 @@ class _MacrosPageState extends State<MacrosPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Макросы')),
       body: ListenableBuilder(
-        listenable: _c,
+        listenable: controller,
         builder: (context, _) {
           final theme = Theme.of(context);
           final scheme = theme.colorScheme;
-          final player = _c.macroPlayer;
-          final running = _c.runningAccounts;
-
-          Widget header(String text) => Padding(
-            padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-            child: Text(
-              text,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: scheme.primary,
-              ),
-            ),
-          );
+          final colors = AppColors.of(context);
+          final player = controller.macroPlayer;
+          final recorder = controller.macroRecorder;
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
             children: [
-              if (_c.macroRecorder.recording)
-                Card(
-                  color: scheme.errorContainer,
-                  margin: const EdgeInsets.only(top: 8),
-                  child: ListTile(
-                    leading: Icon(
-                      Icons.fiber_manual_record,
-                      color: scheme.onErrorContainer,
-                    ),
-                    title: Text(
-                      'Идёт запись. Нажмите F8, чтобы закончить.',
-                      style: TextStyle(color: scheme.onErrorContainer),
-                    ),
-                    trailing: TextButton(
-                      onPressed: _c.stopRecording,
-                      child: const Text('Закончить'),
-                    ),
-                  ),
-                ),
-              header('Запуск в окнах'),
-              if (running.isEmpty)
+              if (recorder.active)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _RecordingCard(controller: controller),
+                ),
+              if (controller.macros.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
                   child: Text(
-                    'Запустите аккаунты на главном экране, и здесь появятся '
-                    'их окна.',
+                    'Пока нет макросов. Запустите аккаунт и запишите первый.',
                     style: TextStyle(color: scheme.outline),
                   ),
-                )
-              else ...[
-                for (final account in running)
-                  _WindowRow(
-                    account: account,
-                    macros: _c.macros,
-                    choice: _c.macroChoiceFor(account),
-                    playing: player.isPlaying(account.userId),
-                    loops: player.loopsOf(account.userId),
-                    locked: player.running,
-                    onChanged: (choice) => _c.setMacroChoice(account, choice),
-                  ),
-                const SizedBox(height: 8),
-                player.running
-                    ? FilledButton.tonalIcon(
-                        onPressed: _startOrStop,
-                        icon: const Icon(Icons.stop),
-                        label: const Text('Остановить (F8)'),
-                      )
-                    : FilledButton.icon(
-                        onPressed: _c.macroRecorder.recording
-                            ? null
-                            : _startOrStop,
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Запустить'),
+                ),
+              for (final macro in controller.macros)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Card(
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
+                      leading: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(
+                          Icons.keyboard_outlined,
+                          size: 20,
+                          color: scheme.onPrimaryContainer,
+                        ),
                       ),
-                if (!player.running && player.stopReason != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      player.stopReason!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: scheme.error),
-                    ),
-                  ),
-              ],
-              header('Сохранённые макросы'),
-              if (_c.macros.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    'Пока нет макросов. Запишите первый.',
-                    style: TextStyle(color: scheme.outline),
-                  ),
-                ),
-              for (final macro in _c.macros)
-                Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: const Icon(Icons.keyboard_alt_outlined),
-                    title: Text(macro.name, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(
-                      '${_formatDuration(macro.durationMs)} · '
-                      '${_actions(macro.events.length)}',
-                    ),
-                    trailing: PopupMenuButton<VoidCallback>(
-                      enabled: !player.running,
-                      onSelected: (action) => action(),
-                      itemBuilder: (_) => [
-                        PopupMenuItem(
-                          value: () => _rename(macro),
-                          child: const Text('Переименовать'),
-                        ),
-                        PopupMenuItem(
-                          value: () => _delete(macro),
-                          child: const Text('Удалить'),
-                        ),
-                      ],
+                      title: Text(macro.name, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                        '${formatMacroDuration(macro.durationMs)} · '
+                        '${formatActionCount(macro.events.length)}',
+                      ),
+                      trailing: PopupMenuButton<VoidCallback>(
+                        enabled: !player.active,
+                        icon: const Icon(Icons.more_horiz),
+                        onSelected: (action) => action(),
+                        itemBuilder: (_) => [
+                          PopupMenuItem(
+                            value: () => _rename(context, macro),
+                            child: const Text('Переименовать'),
+                          ),
+                          PopupMenuItem(
+                            value: () => _delete(context, macro),
+                            child: const Text('Удалить'),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               OutlinedButton.icon(
-                onPressed: player.running || _c.macroRecorder.recording
+                onPressed: player.active || recorder.active
                     ? null
-                    : _record,
-                icon: const Icon(Icons.fiber_manual_record),
+                    : () => recordAndSaveMacro(context, controller),
+                icon: Icon(
+                  Icons.fiber_manual_record,
+                  size: 14,
+                  color: colors.record,
+                ),
                 label: const Text('Записать макрос'),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
                 child: Text(
-                  'F8 заканчивает запись и останавливает все макросы. '
-                  'Windows передаёт ввод только активному окну, поэтому при '
-                  'нескольких окнах макросы выполняются по очереди с '
-                  'переключением между окнами, а пользоваться компьютером '
-                  'в это время нельзя.',
+                  'Запись начинается и заканчивается по F8 в окне Roblox. '
+                  'Макрос для окна выбирается в карточке аккаунта на главном '
+                  'экране. После кнопки «Запустить» макросы стартуют по F8 '
+                  'в окне Roblox, и F8 же их останавливает. В режиме «Туда-обратно» каждый второй круг идёт '
+                  'зеркально: W и S, A и D, стрелки меняются местами, мышь '
+                  'поворачивает камеру обратно, и персонаж возвращается '
+                  'к началу. Windows передаёт ввод только активному окну, '
+                  'поэтому при нескольких окнах макросы выполняются по '
+                  'очереди с переключением между окнами, а пользоваться '
+                  'компьютером в это время нельзя.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.outline,
                   ),
@@ -340,104 +158,128 @@ class _MacrosPageState extends State<MacrosPage> {
   }
 }
 
-class _WindowRow extends StatelessWidget {
-  const _WindowRow({
-    required this.account,
-    required this.macros,
-    required this.choice,
-    required this.playing,
-    required this.loops,
-    required this.locked,
-    required this.onChanged,
-  });
+/// Карточка ожидания F8 или идущей записи.
+class _RecordingCard extends StatelessWidget {
+  const _RecordingCard({required this.controller});
 
-  final Account account;
-  final List<Macro> macros;
-  final MacroChoice choice;
-  final bool playing;
-  final int loops;
-
-  /// Макросы запущены: выбор менять нельзя.
-  final bool locked;
-  final ValueChanged<MacroChoice> onChanged;
-
-  static const _green = Color(0xFF22C55E);
+  final AppController controller;
 
   @override
   Widget build(BuildContext context) {
-    final selected = macros.any((m) => m.id == choice.macroId)
-        ? choice.macroId
-        : null;
+    final scheme = Theme.of(context).colorScheme;
+    final waiting = controller.macroRecorder.waiting;
+    final background = waiting
+        ? scheme.primaryContainer
+        : scheme.errorContainer;
+    final foreground = waiting
+        ? scheme.onPrimaryContainer
+        : scheme.onErrorContainer;
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    account.displayName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (playing)
-                  Text(
-                    choice.loop
-                        ? 'выполняется · круг ${loops + 1}'
-                        : 'выполняется',
-                    style: const TextStyle(color: _green, fontSize: 12),
-                  ),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButton<String?>(
-                    isExpanded: true,
-                    value: selected,
-                    underline: const SizedBox.shrink(),
-                    onChanged: locked
-                        ? null
-                        : (id) => onChanged(
-                            MacroChoice(macroId: id, loop: choice.loop),
-                          ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('Без макроса'),
-                      ),
-                      for (final m in macros)
-                        DropdownMenuItem(
-                          value: m.id,
-                          child: Text(m.name, overflow: TextOverflow.ellipsis),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilterChip(
-                  label: const Text('Повтор'),
-                  selected: choice.loop,
-                  onSelected: locked
-                      ? null
-                      : (v) => onChanged(
-                          MacroChoice(macroId: choice.macroId, loop: v),
-                        ),
-                ),
-              ],
-            ),
-          ],
+      color: background,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: ListTile(
+        leading: Icon(
+          waiting ? Icons.keyboard_outlined : Icons.fiber_manual_record,
+          color: foreground,
+        ),
+        title: Text(
+          waiting
+              ? 'Перейдите в окно Roblox и нажмите F8 — начнётся запись.'
+              : 'Идёт запись. Нажмите F8, чтобы закончить.',
+          style: TextStyle(color: foreground),
+        ),
+        trailing: TextButton(
+          style: TextButton.styleFrom(foregroundColor: foreground),
+          onPressed: waiting
+              ? controller.cancelRecording
+              : controller.stopRecording,
+          child: Text(waiting ? 'Отмена' : 'Закончить'),
         ),
       ),
     );
   }
 }
 
-String _formatDuration(int ms) {
+/// Записывает макрос по F8 и предлагает сохранить его. Только что записанный
+/// макрос сразу выбирается для окна, где его записали, если там ещё ничего
+/// не выбрано.
+Future<void> recordAndSaveMacro(
+  BuildContext context,
+  AppController controller,
+) async {
+  void snack(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  final ({Macro macro, Account? account})? recorded;
+  try {
+    recorded = await controller.recordMacro();
+  } on MacroException catch (e) {
+    snack('$e');
+    return;
+  }
+  if (!context.mounted) return;
+  if (recorded == null) {
+    snack('Макрос не записан');
+    return;
+  }
+  final (:macro, :account) = recorded;
+  final name = await _askName(
+    context,
+    title: 'Сохранить макрос',
+    initial: 'Макрос ${controller.macros.length + 1}',
+    details:
+        '${formatMacroDuration(macro.durationMs)} · '
+        '${formatActionCount(macro.events.length)}',
+  );
+  if (name == null) return;
+  await controller.addMacro(macro, name);
+  if (account != null && controller.macroChoiceFor(account).macroId == null) {
+    controller.setMacroChoice(account, MacroChoice(macroId: macro.id));
+  }
+}
+
+Future<String?> _askName(
+  BuildContext context, {
+  required String title,
+  required String initial,
+  String? details,
+}) {
+  final field = TextEditingController(text: initial);
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (details != null) ...[Text(details), const SizedBox(height: 16)],
+          TextField(
+            controller: field,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Название'),
+            onSubmitted: (v) => Navigator.pop(context, v.trim()),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, field.text.trim()),
+          child: const Text('Сохранить'),
+        ),
+      ],
+    ),
+  ).then((v) => v == null || v.isEmpty ? null : v);
+}
+
+String formatMacroDuration(int ms) {
   final seconds = ms / 1000;
   if (seconds < 60) {
     return '${seconds.toStringAsFixed(1).replaceAll('.', ',')} с';
@@ -446,7 +288,7 @@ String _formatDuration(int ms) {
   return '${whole ~/ 60} мин ${whole % 60} с';
 }
 
-String _actions(int n) {
+String formatActionCount(int n) {
   final mod10 = n % 10, mod100 = n % 100;
   final word = mod10 == 1 && mod100 != 11
       ? 'действие'

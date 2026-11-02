@@ -32,9 +32,10 @@ Runs several Roblox windows at once, each signed in to its own account.
 - Paste a game link or Place ID and the windows open straight in that game. Without a link you get the Roblox home screen.
 - You type your login and password on roblox.com in a built-in window; the client doesn't see or store them.
 - Sessions are kept only on your computer, encrypted.
-- Macros: record keyboard and mouse in a Roblox window, save them and loop them. Each window can run its own macro. Turn them on in the settings. Keep in mind that many games forbid macros in their rules.
+- Macros: record keyboard and mouse in a Roblox window, save them and loop them or play them back and forth. Recording starts with F8 right in the game window, and a badge over the window shows that it is running. The macro and mode are picked right in the card of a running account, and each window can run its own. Turn them on in the settings. Keep in mind that many games forbid macros in their rules.
 - Anti-AFK keeps Roblox from disconnecting you after 20 minutes of inactivity: every few minutes it turns the camera, takes a step or jumps in every window. Turn it on in the settings.
 - If Roblox resets a sign-in, the account gets a "Sign in again" button.
+- Light and dark theme in the Windows 11 style. It follows the system by default and can be picked in the settings.
 - Works with Bloxstrap and Fishstrap: it finds the Roblox they installed and starts it directly.
 
 The app interface is in Russian for now.
@@ -92,7 +93,7 @@ When several accounts are launched, there's a 2-second pause between them.
 
 Anti-AFK (`lib/services/anti_afk.dart`, `lib/services/roblox_windows.dart`) finds the windows of `RobloxPlayerBeta.exe` processes, activates each in turn, presses keys via `SendInput` with scan codes, then gives focus back. If the user touched the mouse or keyboard in the last 30 seconds, the press is postponed. Settings live in `%APPDATA%\com.axawys\bloxawys\settings.json`.
 
-Macros are recorded with Raw Input (`lib/services/raw_input.dart`): a hidden message-only window receives input with the `RIDEV_INPUTSINK` flag, no global keyboard hooks are used. Only input from real devices is recorded, and only while the chosen Roblox window is active: keys as scan codes, mouse movement as relative deltas, clicks with a point in fractions of the window size. Playback (`lib/services/macro_player.dart`) runs the actions of all macros in time order and switches focus before an action for another window; held keys are released and pressed again around the switch. F8 ends recording and stops macros. Macros are stored in `macros.json` next to the settings.
+Macros are recorded with Raw Input (`lib/services/raw_input.dart`): a hidden message-only window receives input with the `RIDEV_INPUTSINK` flag, no global keyboard hooks are used. After you press "Record macro", the client waits for F8 and records the Roblox window that is active at that moment, so it never switches window focus itself. While it waits or records, a badge hangs over the Roblox window (`lib/services/recording_indicator.dart`): a separate topmost window with `WS_EX_NOACTIVATE` and `WS_EX_TRANSPARENT` that never takes focus and lets clicks through. Only input from real devices is recorded, and only while that window is active: keys as scan codes, mouse movement as relative deltas, clicks with a point in fractions of the window size. Starting works the same way: after "Start" the client waits for F8 in one of the windows with a macro, and only after the hotkey does Windows let it switch focus between windows. Playback (`lib/services/macro_player.dart`) runs the actions of all macros in time order and switches focus before an action for another window; held keys are released and pressed again around the switch. In back-and-forth mode odd rounds play as recorded and even rounds play mirrored: the same order and pauses, but W and S, A and D and the arrows swap, and mouse movement and scrolling are inverted. Pressing F8 again ends recording and stops macros. Macros are stored in `macros.json` next to the settings.
 
 </details>
 
@@ -132,6 +133,8 @@ lib/
 │   ├── roblox_windows.dart    Roblox windows: focus and key presses
 │   ├── win32.dart             WinAPI bindings
 │   ├── raw_input.dart         Raw Input and the F8 key
+│   ├── recording_indicator.dart  recording badge over the Roblox window
+│   ├── title_bar.dart         system title bar colour for the theme
 │   ├── macro_recorder.dart    recording a macro
 │   ├── macro_player.dart      playing macros in windows
 │   ├── macro_store.dart       saved macros (macros.json)
@@ -139,9 +142,10 @@ lib/
 │   ├── roblox_launcher.dart   finding and launching RobloxPlayerBeta.exe
 │   └── multi_instance.dart    multiple Roblox windows
 └── ui/
-    ├── home_page.dart         main window
+    ├── theme.dart             light and dark theme
+    ├── home_page.dart         main window: accounts and macros per window
     ├── login_page.dart        sign-in window (WebView2)
-    ├── macros_page.dart       macros
+    ├── macros_page.dart       saved macros and recording
     └── settings_page.dart     settings
 ```
 

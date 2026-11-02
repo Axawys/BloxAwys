@@ -2,6 +2,32 @@ enum MacroEventType { keyDown, keyUp, move, buttonDown, buttonUp, wheel }
 
 enum MouseButton { left, right, middle }
 
+/// Как повторять макрос.
+enum MacroPlayMode {
+  /// Один проход.
+  once,
+
+  /// По кругу: каждый раз с начала.
+  loop,
+
+  /// Туда и обратно: нечётные круги идут как записано, чётные — зеркально,
+  /// и персонаж возвращается туда, откуда начинал.
+  pingPong,
+}
+
+/// Клавиши движения и их противоположности: W и S, A и D, стрелки.
+/// Ключ — скан-код и признак расширенной клавиши.
+const _oppositeKeys = {
+  (0x11, false): (0x1F, false), // W ↔ S
+  (0x1F, false): (0x11, false),
+  (0x1E, false): (0x20, false), // A ↔ D
+  (0x20, false): (0x1E, false),
+  (0x48, true): (0x50, true), // ↑ ↔ ↓
+  (0x50, true): (0x48, true),
+  (0x4B, true): (0x4D, true), // ← ↔ →
+  (0x4D, true): (0x4B, true),
+};
+
 /// Одно действие макроса.
 ///
 /// Клавиши хранятся скан-кодами. Движение мыши — относительным смещением,
@@ -39,6 +65,27 @@ class MacroEvent {
 
   bool get isButton =>
       type == MacroEventType.buttonDown || type == MacroEventType.buttonUp;
+
+  /// То же действие в обратную сторону: клавиша движения меняется на
+  /// противоположную, движение мыши и прокрутка — на встречные. Остальные
+  /// клавиши и клики остаются как есть.
+  MacroEvent _mirrored() {
+    final (mirroredScan, mirroredExtended) = isKey
+        ? _oppositeKeys[(scanCode, extended)] ?? (scanCode, extended)
+        : (scanCode, extended);
+    return MacroEvent(
+      t: t,
+      type: type,
+      scanCode: mirroredScan,
+      extended: mirroredExtended,
+      dx: -dx,
+      dy: -dy,
+      button: button,
+      x: x,
+      y: y,
+      wheel: -wheel,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     't': t,
@@ -81,6 +128,16 @@ class Macro {
   final int durationMs;
 
   Duration get duration => Duration(milliseconds: durationMs);
+
+  /// Зеркальный макрос: те же действия в том же порядке и с теми же
+  /// паузами, но персонаж идёт в обратную сторону, а камера поворачивается
+  /// навстречу.
+  Macro mirrored() => Macro(
+    id: id,
+    name: name,
+    durationMs: durationMs,
+    events: [for (final e in events) e._mirrored()],
+  );
 
   Macro copyWith({String? name}) => Macro(
     id: id,

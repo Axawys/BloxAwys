@@ -23,12 +23,66 @@ class SettingsPage extends StatelessWidget {
         builder: (context, _) => ListView(
           padding: const EdgeInsets.only(bottom: 16),
           children: [
+            _AppearanceSection(controller: controller),
+            const Divider(height: 32),
             _AntiAfkSection(controller: controller),
             const Divider(height: 32),
             _MacrosSection(controller: controller),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AppearanceSection extends StatelessWidget {
+  const _AppearanceSection({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text(
+            'Оформление',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: SegmentedButton<AppTheme>(
+            segments: const [
+              ButtonSegment(
+                value: AppTheme.system,
+                icon: Icon(Icons.brightness_auto_outlined),
+                label: Text('Как в системе'),
+              ),
+              ButtonSegment(
+                value: AppTheme.light,
+                icon: Icon(Icons.light_mode_outlined),
+                label: Text('Светлая'),
+              ),
+              ButtonSegment(
+                value: AppTheme.dark,
+                icon: Icon(Icons.dark_mode_outlined),
+                label: Text('Тёмная'),
+              ),
+            ],
+            selected: {controller.settings.theme},
+            showSelectedIcon: false,
+            onSelectionChanged: (v) => controller.updateSettings(
+              controller.settings.copyWith(theme: v.first),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -177,8 +231,9 @@ class _MacrosSection extends StatelessWidget {
           title: const Text('Включить макросы'),
           subtitle: Text(
             supported
-                ? 'Запись клавиатуры и мыши в окне Roblox и повтор по кругу. '
-                      'В шапке появится кнопка «Макросы».'
+                ? 'Запись клавиатуры и мыши в окне Roblox и повтор. У '
+                      'запущенных аккаунтов появится выбор макроса, а внизу '
+                      'главного экрана — панель макросов.'
                 : 'Работает только в Windows.',
           ),
           value: _s.enabled,

@@ -34,6 +34,13 @@ void main() {
     expect(restored.respectUserActivity, isFalse);
   });
 
+  test('тема по умолчанию как в системе и сохраняется', () {
+    expect(AppSettings.fromJson({}).theme, AppTheme.system);
+    expect(AppSettings.fromJson({'theme': 'neon'}).theme, AppTheme.system);
+    const dark = AppSettings(theme: AppTheme.dark);
+    expect(AppSettings.fromJson(dark.toJson()).theme, AppTheme.dark);
+  });
+
   test(
     'неизвестные значения в настройках заменяются на значения по умолчанию',
     () {

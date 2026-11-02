@@ -1,3 +1,11 @@
+/// Оформление клиента.
+enum AppTheme {
+  /// Светлое или тёмное, как в Windows.
+  system,
+  light,
+  dark,
+}
+
 /// Что нажимать, чтобы Roblox не отключил за бездействие.
 enum AntiAfkAction {
   /// Стрелки влево-вправо: камера поворачивается и возвращается.
@@ -69,7 +77,8 @@ class MacroSettings {
     this.recordMouseMovement = true,
   });
 
-  /// Модуль макросов включён: в шапке появляется кнопка «Макросы».
+  /// Модуль макросов включён: у запущенных аккаунтов появляется выбор
+  /// макроса, а внизу главного экрана — панель макросов.
   final bool enabled;
 
   /// Останавливать макросы, если пользователь взялся за мышь или клавиатуру.
@@ -106,25 +115,33 @@ class MacroSettings {
 /// Настройки клиента. Сюда же лягут настройки будущих модулей.
 class AppSettings {
   const AppSettings({
+    this.theme = AppTheme.system,
     this.antiAfk = const AntiAfkSettings(),
     this.macros = const MacroSettings(),
   });
 
+  final AppTheme theme;
   final AntiAfkSettings antiAfk;
   final MacroSettings macros;
 
-  AppSettings copyWith({AntiAfkSettings? antiAfk, MacroSettings? macros}) =>
-      AppSettings(
-        antiAfk: antiAfk ?? this.antiAfk,
-        macros: macros ?? this.macros,
-      );
+  AppSettings copyWith({
+    AppTheme? theme,
+    AntiAfkSettings? antiAfk,
+    MacroSettings? macros,
+  }) => AppSettings(
+    theme: theme ?? this.theme,
+    antiAfk: antiAfk ?? this.antiAfk,
+    macros: macros ?? this.macros,
+  );
 
   Map<String, dynamic> toJson() => {
+    'theme': theme.name,
     'antiAfk': antiAfk.toJson(),
     'macros': macros.toJson(),
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
+    theme: AppTheme.values.asNameMap()[json['theme']] ?? AppTheme.system,
     antiAfk: json['antiAfk'] is Map<String, dynamic>
         ? AntiAfkSettings.fromJson(json['antiAfk'] as Map<String, dynamic>)
         : const AntiAfkSettings(),
