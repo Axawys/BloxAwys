@@ -134,11 +134,24 @@ bool Win32Window::Create(const std::wstring& title,
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
-  HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
-      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
-      nullptr, nullptr, GetModuleHandle(nullptr), this);
+  // Center the window in the monitor's work area (the screen minus the
+  // taskbar) and keep it inside: at 150% scaling a 760 px tall window is
+  // taller than a 1080p screen, and the title bar ends up out of reach.
+  MONITORINFO monitor_info = {sizeof(MONITORINFO)};
+  GetMonitorInfo(monitor, &monitor_info);
+  const RECT& work = monitor_info.rcWork;
+  const int work_width = work.right - work.left;
+  const int work_height = work.bottom - work.top;
+  int width = Scale(size.width, scale_factor);
+  int height = Scale(size.height, scale_factor);
+  if (width > work_width) width = work_width;
+  if (height > work_height) height = work_height;
+  const int x = work.left + (work_width - width) / 2;
+  const int y = work.top + (work_height - height) / 2;
+
+  HWND window = CreateWindow(window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
+                             x, y, width, height, nullptr, nullptr,
+                             GetModuleHandle(nullptr), this);
 
   if (!window) {
     return false;
